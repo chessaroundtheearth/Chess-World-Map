@@ -1,0 +1,1227 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>ChessAroundTheEarth - World Teams Map</title>
+<style>
+body{margin:0;background:#000;color:#eee;font-family:system-ui,sans-serif}
+.wrap{padding:12px;max-width:1400px;margin:0 auto;position:relative}
+h1{font-size:1.2rem;margin:0 0 6px;color:#fff}
+.stats{font-size:.8rem;color:#bbb;margin-bottom:8px}
+#mapbox{position:relative;background:#a9c7e8;border-radius:8px;overflow:hidden}
+#map svg{display:block;width:100%;height:auto}
+.country{stroke:#3d5a78;stroke-width:.4;cursor:pointer}
+.country:hover{stroke:#fff;stroke-width:1}
+.pin{stroke:#000;stroke-width:.6;cursor:pointer}
+.pin.nation{fill:#ffd34d}.pin.city{fill:#58d68d}
+.pin:hover,.pin.sel{stroke:#fff;stroke-width:1.6}
+.corner{position:absolute;width:70px;height:70px;pointer-events:none;border-radius:50%}
+.tl{top:8px;left:8px}.tr{top:8px;right:8px}.bl{bottom:8px;left:8px}.br{bottom:8px;right:8px}
+#panel{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:760px){#panel{grid-template-columns:1fr}}
+.card{background:#111;border:1px solid #333;border-radius:8px;padding:10px}
+.card h2{font-size:.8rem;margin:0 0 6px;color:#9aa;text-transform:uppercase}
+input,select{width:100%;box-sizing:border-box;padding:7px;background:#000;color:#eee;border:1px solid #444;border-radius:6px}
+.row{display:flex;justify-content:space-between;gap:8px;padding:5px 7px;border-radius:6px;cursor:pointer;font-size:.8rem}
+.row:hover,.row.sel{background:#223}
+.row .m{color:#888;white-space:nowrap}
+.detail{font-size:.85rem;line-height:1.5}
+.detail a{color:#7cc4ff;word-break:break-all}
+.muted{color:#888}
+#tip{position:fixed;pointer-events:none;background:#111;border:1px solid #444;border-radius:6px;padding:4px 8px;font-size:.78rem;display:none;z-index:9;color:#fff}
+</style></head><body>
+<div class="wrap">
+<h1>ChessAroundTheEarth · World Teams Map</h1>
+<div class="stats" id="stats"></div><div style="margin-bottom:6px"><button id="zin">＋ Zoom in</button> <button id="zout">－ Zoom out</button> <button id="zreset">Reset</button></div>
+<div id="mapbox">
+  <div id="map"></div>
+  <img class="corner tl" src="globe.png" alt="">
+  <img class="corner tr" src="globe.png" alt="">
+  <img class="corner bl" src="globe.png" alt="">
+  <img class="corner br" src="globe.png" alt="">
+</div>
+<div id="panel">
+  <div class="card">
+    <h2>Teams</h2>
+    <select id="layer"><option value="all">All (national teams + cities)</option><option value="nation">National teams only</option><option value="city">Cities only</option></select>
+    <input id="q" placeholder="Search country, city, club..." style="margin-top:6px">
+    <div id="list" style="margin-top:8px;max-height:460px;overflow-y:auto"></div>
+  </div>
+  <div class="card"><h2>Details</h2><div class="detail" id="detail"><span class="muted">Click a country, a pin or a list item.</span></div></div>
+</div>
+</div>
+<div id="tip"></div>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<script>
+var NATIONS=[
+["South Africa 🇿🇦","Team South Africa","Team South Africa | https://www.chess.com/club/team-south-africa","@Malan77 & @klipkastel","WhatsApp | https://chat.whatsapp.com/FRkQOHoYhgE11TsHagQIWr ; YouTube | https://www.youtube.com/@superchesslife ; info@onsdorp.com | mailto:info@onsdorp.com"],
+["Algeria 🇩🇿","Team Algeria","Team Algeria | https://www.chess.com/club/team-algeria2","@REAL_GLITCH*, @Nito1Dev & IPL","Discord | https://discord.gg/mUMw5NZUns"],
+["Angola 🇦🇴","Angola / Equipa de Angola","Angola | https://www.chess.com/club/angola ; Equipa de Angola | https://www.chess.com/club/equipa-de-angola","@pauloofico / @INTL_PREMIER_LEAGUE",""],
+["Botswana 🇧🇼","Botswana","Botswana | https://www.chess.com/club/botswana","@Swarajan & @Mphie",""],
+["Burundi 🇧🇮","Burundi Chess Players","Burundi Chess Players | https://www.chess.com/club/burundi-chess-players","IPL, CATE & @daniilyaku",""],
+["Burkina Faso 🇧🇫","Burkina Faso","Burkina Faso | https://www.chess.com/club/burkina-faso","@Nicolas_Carbonell",""],
+["Chad 🇹🇩","Chad Team / Équipe du Tchad","Chad Team | https://www.chess.com/club/chad-team ; Équipe du Tchad | https://www.chess.com/club/equipe-du-tchad","@Aayonokoji99 / IPL",""],
+["DR Congo 🇨🇩","Team R.D.Congo / Équipe de la R.D Congo","Team R.D.Congo | https://www.chess.com/club/team-r-d-congo ; Équipe de la R.D Congo | https://www.chess.com/club/equipe-de-la-r-d-congo","IPL",""],
+["Republic of Congo 🇨🇬","NO OFFICAL TEAM","","",""],
+["Côte d'Ivoire 🇨🇮","Côte d'Ivoire Echecs / Ivory Coast Chess Team","Côte d'Ivoire Echecs | https://www.chess.com/club/cote-divoire-echecs ; Ivory Coast Chess Team | https://www.chess.com/club/ivory-coast-chess-team","@le_maitre226 & @the-god-children / IPL",""],
+["Cameroon 🇨🇲","Cameroon / Équipe du Cameroun","Cameroon | https://www.chess.com/club/cameroon ; Équipe du Cameroun | https://www.chess.com/club/equipe-du-cameroun","@oMirza & @Cameroon007 / IPL",""],
+["Cabo Verde 🇨🇻","Cabo Verde and Vozinha's friends","Cabo Verde and Vozinha's friends | https://www.chess.com/club/cabo-verde-and-vozinhas-friends","CATE & @daniilyaku*",""],
+["Djibouti 🇩🇯","Team Djibouti","Team Djibouti | https://www.chess.com/club/team-djibouti","NO ADMIN",""],
+["Egypt 🇪🇬","EGYPT CHESS CLUB","EGYPT CHESS CLUB | https://www.chess.com/club/egypt-chess-club","CATE, IPL, @Harionago, @Duo-Owl, @msultan71, @Jared & @carlsen","WhatsApp | https://chat.whatsapp.com/J1mqDrrg1rL1tHbXMF19ke"],
+["Eritrea 🇪🇷","Team Eritrea","Team Eritrea | https://www.chess.com/club/team-eritrea","@oMirza & @Tseghai",""],
+["Swaziland (Eswatini) 🇸🇿","Team Swaziland","Team Swaziland | https://www.chess.com/club/team-swaziland","@prince-jerome",""],
+["Ethiopia 🇪🇹","Team Ethiopia / Ethiopia Chess Team","Team Ethiopia | https://www.chess.com/club/team-ethiopia ; Ethiopia Chess Team | https://www.chess.com/club/ethiopia-chess-team","@oMirza & @Endu / IPL",""],
+["Gabon 🇬🇦","Chess Gabon","Chess Gabon | https://www.chess.com/club/chess-gabon-1","CATE, IPL, @LCWL @gabonesechessplayer, @FrankyPascal & @medericnzieaudzaghe","WhatsApp | https://chat.whatsapp.com/CZ3kJFYAtyv9rRTdq0GIBj ; Lichess | https://lichess.org/team/chess-gabon"],
+["Gambia 🇬🇲","Team Gambia","Team Gambia | https://www.chess.com/club/team-gambia","@oMirza & @hersheyboy",""],
+["Ghana 🇬🇭","Team Ghana /Chess Community Ghana / Ghana Chess Team","Team Ghana | https://www.chess.com/club/team-ghana ; Chess Community Ghana | https://www.chess.com/club/chess-community-ghana ; Ghana Chess Team | https://www.chess.com/club/ghana-chess-team","@ilaray & @pepra /@Nyameba & @bn1462 / IPL","WhatsApp | https://whatsapp.com/channel/0029VbBl3Jn1SWsuqdLh7R3D"],
+["Guinea 🇬🇳","Guinea Chess Club","Guinea Chess Club | https://www.chess.com/club/guinea-chess-club","@Styvert",""],
+["Equatorial Guinea 🇬🇶","Chess.com - Ecuatorial Guinea","Chess.com - Ecuatorial Guinea | https://www.chess.com/club/chess-com-guinea-ecuatorial","@monica-karpovskii","YouTube | https://www.youtube.com/channel/UChDUf2y2Svm1UDgnLzv8btQ"],
+["Guinea-Bissau 🇬🇼","NO OFFICIAL TEAM","","",""],
+["Madagascar 🇲🇬","Madagascar / Équipe de Madagascar","Madagascar | https://www.chess.com/club/madagascar ; Équipe de Madagascar | https://www.chess.com/club/equipe-de-madagascar","@GRO-NIX & @Madag9",""],
+["Lesotho 🇱🇸","Team Lesotho","Team Lesotho | https://www.chess.com/club/team-lesotho","@skipper_bru, @foggyma & @oMirza",""],
+["Liberia 🇱🇷","Team Liberia","Team Liberia | https://www.chess.com/club/team-liberia","@oMirza & @Nnaa33",""],
+["Libya 🇱🇾","Libya Chess Team","Libya Chess Team | https://www.chess.com/club/libya-chess-team","CATE, IPL, @Harionago & @ibamhawal74",""],
+["Morocco 🇲🇦","Team Morocco","Team Morocco | https://www.chess.com/club/team-morocco2","@aliboron, IPL & @Calebaleb","Twitch | https://twitch.tv/billychess"],
+["Kenya 🇰🇪","Kenya","Kenya | https://www.chess.com/club/kenya","IPL & @stealthdodger","WhatsApp | https://chat.whatsapp.com/GmkIfApqJd00M18GsZzYhG"],
+["Comoros 🇰🇲","Comoros","Comoros | https://www.chess.com/club/comoros-jzr-lqmr","@KnivesChess",""],
+["Mali 🇲🇱","Mali Chess Players","Mali Chess Players | https://www.chess.com/club/mali-chess-players","@moc86 & @bamoulaye22",""],
+["Mauritania 🇲🇷","NO OFFICIAL TEAM","","",""],
+["Mauritius 🇲🇺","Mauritius / Mauritius.","Mauritius | https://www.chess.com/club/mauritius ; Mauritius | https://www.chess.com/club/mauritius-1","@Freelance & @ChessWizard02 / @daniilyaku & @Scarlett_Ash",""],
+["Malawi 🇲🇼","Malawi","Malawi | https://www.chess.com/club/malawi","@GMStaut & @CannonballCarlos",""],
+["Mozambique 🇲🇿","Team-Mozambique / Equipa de Moçambique","Team-Mozambique | https://www.chess.com/club/team-mozambique-1 ; Equipa de Moçambique | https://www.chess.com/club/equipa-de-mocambique","@Sharsan & @Rikinho / IPL",""],
+["Namibia 🇳🇦","Team Namibia","Team Namibia | https://www.chess.com/club/team-namibia","@ProfessorNamibia",""],
+["Niger 🇳🇪","Niger Team / Équipe du Niger","Niger Team | https://www.chess.com/club/niger-team ; Équipe du Niger | https://www.chess.com/club/equipe-du-niger","@Dakaoulbrahim / IPL",""],
+["Nigeria 🇳🇬","Team Nigeria","Team Nigeria | https://www.chess.com/club/team-nigeria","@LCWL, @jmafeni & @dabee","WhatsApp Group | https://chat.whatsapp.com/CMm96crY9s67HmUyTEb5jW ; WhatsApp Chat | https://chat.whatsapp.com/DIzxT7Jtnw27qEuSMX7Hmt"],
+["Réunion 🇷🇪","Team Reunion","Team Reunion | https://www.chess.com/club/team-reunion","@Kookaburrra* & @CFE-LFR-CFT",""],
+["Rwanda 🇷🇼","Rwanda Chess","Rwanda Chess | https://www.chess.com/club/rwanda-chess","@Alleluia_rw",""],
+["Seychelles 🇸🇨","Sunset Knights Chess Club Seychelles","Sunset Knights Chess Club Seychelles | https://www.chess.com/club/sunset-knights-chess-club-seychelles","@KingLeon77",""],
+["Sudan 🇸🇩","Sudan Chess Team","Sudan Chess Team | https://www.chess.com/club/sudan-chess-team","CATE, IPL, @Harionago & @Shetos_GrandMastar",""],
+["South Sudan 🇸🇸","NO OFFICIAL TEAM","","",""],
+["Sierra Leone 🇸🇱","Team Sierra Leone","Team Sierra Leone | https://www.chess.com/club/team-sierra-leone","@oMirza",""],
+["Senegal 🇸🇳","Team Senegal","Team Senegal | https://www.chess.com/club/team-senegal","IPL, @Thalesfall, @Symetris44 & @oMirza",""],
+["Somalia 🇸🇴","Chess.com - Somalia / Somalia Chess Team","Chess.com - Somalia | https://www.chess.com/club/chess-com-somalia ; Somalia Chess Team | https://www.chess.com/club/somalia-chess-team","@GMguutaale9 &CATE (in C.c)/IPL & @Harionago (in S.C.T)","TikTok | https://www.tiktok.com/@guutaale9_?is_from_webapp=1&amp;sender_device=pc ; Discord | https://discord.gg/89jGZYZBe"],
+["São Tome & Principe 🇸🇹","NO OFFICIAL TEAM","","",""],
+["Togo 🇹🇬","Team Togo","Team Togo | https://www.chess.com/club/team-togo","@TuPiutaMalder & @oMirza",""],
+["Tunisia 🇹🇳","Team Tunisia / Tunisia Chess Team","Team Tunisia | https://www.chess.com/club/team-tunisia ; Tunisia Chess Team | https://www.chess.com/club/tunisia-chess-team","@souissi (in T.T) / IPL, @Shetos_GrandMastar & @Harionago (in T.C.T)",""],
+["Tanzania 🇹🇿","Chess Tanzania","Chess Tanzania | https://www.chess.com/club/chess-tanzania","CATE, @LCWL, @Miheto* and @Dumbledore_Albus","WhatsApp | https://chat.whatsapp.com/CawwArGJWyAJSXpfeR2O9c"],
+["Uganda 🇺🇬","Uganda Cranes","Uganda Cranes | https://www.chess.com/club/uganda-cranes","@Mark3898 & CATE","WhatsApp | https://chat.whatsapp.com/H3zg6yF0VQj06KNxDLEHW6"],
+["Zambia 🇿🇲","Team Zambia","Team Zambia | https://www.chess.com/club/team-zambia","@Phiri_John",""],
+["Zimbabwe 🇿🇼","Team Zimbabwe / Beautiful Zimbabwe","Team Zimbabwe | https://www.chess.com/club/team-zimbabwe ; Beautiful Zimbabwe | https://www.chess.com/club/beautiful-zimbabwe","@mufudzi (in T.Z) / @danillyaku*, @CultureKid (in B.Z)",""],
+["Canada 🇨🇦","Team Canada Live","Team Canada Live | https://www.chess.com/club/team-canada-live","@Chris_E_S3 & @PHIL-ROY",""],
+["USA 🇺🇸","Team USA Live","Team USA Live | https://www.chess.com/club/team-usa-live","NM @Dare-Dare, @LCWL, @jcohen42, @DillWithThePickle & @MyBrainNeedsOil","Discord | https://discord.gg/gaEaD2eJdh"],
+["Mexico 🇲🇽","Asociacion Mexicana de Ajedrez - AMA / Mexico Live Chess","Asociacion Mexicana de Ajedrez - AMA | https://www.chess.com/club/asociacion-mexicana-de-ajedrez-ama ; Mexico Live Chess | https://www.chess.com/club/mexico-live-chess","@EsauAlvarez*, @LeonGreco & @Magnussete / @Aldebaran789 & @Nachogm57","Facebook | https://www.facebook.com/TeamMexicoenChessCom/ ; YouTube | https://www.youtube.com/@MexicoLiveChess ; WhatsApp | https://chat.whatsapp.com/JK3TVM9oijyBwsCpIC5Ppx"],
+["Argentina 🇦🇷","Argentina Live Chess / Argentina Chess Club","Argentina Live Chess | https://www.chess.com/club/argentina-live-chess ; Argentina Chess Club | https://www.chess.com/club/argentina-chess-club","@delirantetotal & @ariel_scillingo28 (Arg.L.C) / @Scarlett_Ash* & @augustomacri (Arg.Ch.Cl)",""],
+["Bolivia 🇧🇴","Bolivia / Club ajedrez Bolivia live chess","Bolivia | https://www.chess.com/club/bolivia ; Club ajedrez Bolivia live chess | https://www.chess.com/club/bolivia-live","@zuckonit & @rdick / @Scarlett_Ash",""],
+["Brazil 🇧🇷","Team Brazil Live","Team Brazil Live | https://www.chess.com/club/team-brazil-live","CATE, IPL, @dkrummenauer, @JonasTrindade, @Fortitudine & @Wind","Facebook | https://www.facebook.com/groups/xadrezteambrazil/"],
+["Chile 🇨🇱","Team Chile / Chess.com - Chile","Team Chile | https://www.chess.com/club/team-chile ; Chess.com - Chile | https://www.chess.com/club/chess-com-chile","@jorquerino & @Scarlett_Ash, CATE in C.c",""],
+["Colombia 🇨🇴","Team Colombia","Team Colombia | https://www.chess.com/club/team-colombia","@WilliamVarela & @vagamundo",""],
+["Ecuador 🇪🇨","Ecuador Live Chess","Ecuador Live Chess | https://www.chess.com/club/ecuador-live-chess","@LombeidaAlfonso2005 & @dieguin",""],
+["El Salvador 🇸🇻","El Salvador","El Salvador | https://www.chess.com/club/el-salvador","@LCWL & @ChessGalaxyLord",""],
+["Greenland 🇬🇱","Team Greenland","Team Greenland | https://www.chess.com/club/team-greenland","@johanpalmaer",""],
+["French Guyana 🇬🇫","Team Guyana Française","Team Guyana Française | https://www.chess.com/club/team-guyane-francaise","@CFE-LFR-CFT, @Nefasto973 & @AnderStood",""],
+["Haiti 🇭🇹","Team Haiti","Team Haiti | https://www.chess.com/club/team-haiti","@EloRaiser51*, @LCWL, IPL, @dantpatrick & @dev_null",""],
+["Nicaragua 🇳🇮","Team Nicaragua","Team Nicaragua | https://www.chess.com/club/team-nicaragua","@LCWL, @CH-2026 & @YankoBerriosV",""],
+["Panama 🇵🇦","Panama Virtual","Panama Virtual | https://www.chess.com/club/panama-virtual","CATE & @bricardonelson","WhatsApp | https://chat.whatsapp.com/IeEn8Xazg0N6PgZ5p82she"],
+["Paraguay 🇵🇾","Ajedrez Paraguay","Ajedrez Paraguay | https://www.chess.com/club/ajedrez-paraguay","@StrangerDancer & @Benkiu","WhatsApp Team's Group | https://chat.whatsapp.com/LhlWhd3HN3e5wBZFwYngEH?mode=gi_t ; WhatsApp Paraguay's Group | https://chat.whatsapp.com/B7XK8vY4uxP99gDl6luflx"],
+["Peru 🇵🇪","Team Peru","Team Peru | https://www.chess.com/club/team-peru","@TonyAlcantara89 & @Remontesinos","Lichess | https://lichess.org/team/asociacion-peruana-de-ajedrez"],
+["Dominican Republic 🇩🇴","Team Dominican Republic","Team Dominican Republic | https://www.chess.com/club/team-dominican-republic","@franquintin, @e4d6win & @GARC1A","WhatsApp | https://chat.whatsapp.com/B7XK8vY4uxP99gDl6luflx ; YouTube | https://www.youtube.com/tdrchessclub ; Lichess | https://lichess.org/team/tdr-chess-club"],
+["Uruguay 🇺🇾","Uruguay Open","Uruguay Open | https://www.chess.com/club/uruguay-open","@nau64 & @nau64ajedrez",""],
+["Venezuela 🇻🇪","Team Venezuela","Team Venezuela | https://www.chess.com/club/team-venezuela","@vicmanpal & @lbcf",""],
+["Falkland Islands 🇫🇰","Falkland Islands","Falkland Islands | https://www.chess.com/club/falkland-islands","@Kookaburrra & IPL",""],
+["Afghanistan 🇦🇫","Afghanistan Team / Stars of Afghanistan","Afghanistan Team | https://www.chess.com/club/afghanistan-team ; Stars of Afghanistan | https://www.chess.com/club/stars-of-afghanistan","@naaemamel (in A.T) / @DarkOcean23 & @zaki20022 (in S.A)","WhatsApp | https://chat.whatsapp.com/GA5PKYGkPl89t7SZ9vC8r1"],
+["Saudi Arabia 🇸🇦","Saudi Chess Federation / Kingdom Saudi Arabia Chess Team","Saudi Chess Federation | https://www.chess.com/club/saudi-chess-federation ; Kingdom Saudi Arabia Chess Team | https://www.chess.com/club/kingdom-saudi-arabia-chess-team","@badrsh980 (in S.C.F) / IPL, @Harionago & @Dr_Wicked (in K.S.A.C.T)","Federation Site | http://scf.gov.sa/ ; Twitter (X) | https://twitter.com/KSAchess"],
+["Armenia 🇦🇲","Team Armenia Live","Team Armenia Live | https://www.chess.com/club/team-armenia-live-1","CATE, @ACM_ArthurKhachaturyan*, @Team_Armenia_Live & @Narek_Harutyunyan_2010","Instagram | https://www.instagram.com/teamarmenialive/"],
+["Azerbaidjan 🇦🇿","Team Azerbaijan","Team Azerbaijan | https://www.chess.com/club/team-azerbaijan","@seyranhacibeyli & @riadfuadoglu777",""],
+["Bahrain 🇧🇭","Bahrain Chess Team","Bahrain Chess Team | https://www.chess.com/club/bahrain-chess-team","@burairalhabib",""],
+["Bangladesh 🇧🇩","Team Bangladesh","Team Bangladesh | https://www.chess.com/club/team-bangladesh","@Nibir2*, @rakibul2010islam, @AfiyaJr & @ExtremeLearner",""],
+["Cambodia 🇰🇭","Cambodia","Cambodia | https://www.chess.com/club/cambodia","@songkeming & @oMirza",""],
+["PR China 🇨🇳","Team China","Team China | https://www.chess.com/club/team-china","@ylu2003 & @jootoo",""],
+["North Korea (DPRK) 🇰🇵","North-Korea","North-Korea | https://www.chess.com/club/north-korea2","@transamino",""],
+["South Korea 🇰🇷","Chess.com - Korea","Chess.com - Korea | https://www.chess.com/club/chess-com-korea","@LCWL, @CHESScom & @chesscomKR","YouTube | https://go.chess.com/youtube_ko ; Twitter (X) | https://go.chess.com/twitter_ko ; Facebook | https://go.chess.com/facebook_ko ; Instagram | https://go.chess.com/instagram_ko ; Tiktok | https://go.chess.com/tiktok_ko ; Twitch | https://go.chess.com/twitch_ko"],
+["United Arab Emirates 🇦🇪","United Arab Emirates Chess Team","United Arab Emirates Chess Team | https://www.chess.com/club/united-arab-emirates-chess-team","IPL, CATE, @Shetos_GrandMastar & @Harionago",""],
+["Fiji 🇫🇯","Fiji Chess Federation Club / Fiji Chess","Fiji Chess Federation Club | https://www.chess.com/club/fiji-chess-federation-club ; Fiji Chess | https://www.chess.com/club/fiji-chess","@avinesh_fiji / @Kookaburrra, @SPIRITOF_AUSTRSLIA & IPL",""],
+["Philippines 🇵🇭","Team Philippines Live Chess / Philippines Chess Team","Team Philippines Live Chess | https://www.chess.com/club/team-philippines-live-chess ; Philippines Chess Team | https://www.chess.com/club/philippines-chess-team","@jtibon, @TaasNooPilipino143 & @SillyDragon / CATE, IPL & @GreatBleach49",""],
+["Georgia 🇬🇪","Team Georgia","Team Georgia | https://www.chess.com/club/team-georgia","@Tornike1987 & @ChessGeorgian",""],
+["India 🇮🇳","Team India","Team India | https://www.chess.com/club/team-india","@Evergreen_Warrior, @dbabudelhi & @aravindhnath",""],
+["Indonesia 🇮🇩","Timnas Indonesia","Timnas Indonesia | https://www.chess.com/club/timnas-indonesia","CATE, @1LTC* & @Afwati",""],
+["Jordan 🇯🇴","Jordan Team","Jordan Team | https://www.chess.com/club/jordan-team","IPL, @Harionago & @yasersakran",""],
+["Iraq 🇮🇶","Team Iraq / Iraqi Chess Federation","Team Iraq | https://www.chess.com/club/team-iraq ; Iraqi Chess Federation | https://www.chess.com/club/iraqi-chess-federation","CATE, @LCWL & @AhmedMansour101 / IPL & @Harionago","Telegram | https://t.me/+aR58ZavjQUY3OWVi"],
+["IR Iran 🇮🇷","Team Iran+ / Omid Iran","Team Iran+ | https://www.chess.com/club/team-iran-1 ; Omid Iran | https://www.chess.com/club/omid-iran","IPL, @Kiavash21 & @Hani_Caspian / @OmidIrani4433, @Ghazi_1731, @Ajvann7 & @hamoli2003","National Website | https://iranianchess.com/ ; Team's Website | https://irchessgroup.ir/"],
+["Japan 🇯🇵","Chess Japan / Team Japan","Chess Japan | https://www.chess.com/club/chess-japan ; Team Japan | https://www.chess.com/club/team-japan","CATE, @silent-sniper, @AyaNoClue, @TheRateClimber & @ChessJapan15 / @Mattisian @AngelicNightcore",""],
+["Kazahstan 🇰🇿","Team Kazakhstan","Team Kazakhstan | https://www.chess.com/club/team-kazakhstan","@kryton00, @adil111100 & @Zhagpar","Website | https://teamkazakhstan.kz/#vstupit-v-komandu%3Cbr ; Instagram | https://www.instagram.com/teamkazakhstan.kz/ ; YouTube | https://youtube.com/@teamkazakhstan?si=-L7xZ__Cx_e74w7t ; Facebook | https://www.facebook.com/share/1JdUyFGeQJ/ ; WhatsApp Daily | https://chat.whatsapp.com/5qXvLZZKSoK5JvT2vNSYNQ ; Telegram Daily | https://t.me/teamkazakhstaninfo ; WhatsApp Blitz | https://chat.whatsapp.com/CFPhKSNyWjR0YtBe1SSAV0 ; Telegram Blitz | https://t.me/blitzinfoteamkazakhstan"],
+["Kyrgyzstan 🇰🇬","Team_Kyrgyzstan","Team_Kyrgyzstan | https://www.chess.com/club/team-kyrgyzstan2","@LCWL, @seyranhacibeyli & @HMrPenguin",""],
+["Laos 🇱🇦","Team Laos","Team Laos | https://www.chess.com/club/team-laos","@johnmusacha",""],
+["Lebanon 🇱🇧","Team Lebanon","Team Lebanon | https://www.chess.com/club/team-lebanon","CATE, IPL, @Trojan_Gambit & @Harionago","WhatsApp | https://chat.whatsapp.com/LHhdWpEbysHIj4YmlfPAMH"],
+["Maldives 🇲🇻","Maldives","Maldives | https://www.chess.com/club/maldives","@infinitium & @MohemedAzeenAbdulla",""],
+["Malaysia 🇲🇾","Malaysia Chessers / Team Malaysia / Malaysia Chess Federation","Malaysia Chessers | https://www.chess.com/club/malaysia-chessers ; Team Malaysia | https://www.chess.com/club/team-malaysia ; Malaysia Chess Federation | https://www.chess.com/club/malaysian-chess-federation","@home163, @GodspeedMas & @eayze / @kevinong76 @dzuljazz2001 / @mcfsec2020",""],
+["Mongolia 🇲🇳","Team Mongolia","Team Mongolia | https://www.chess.com/club/team-mongolia","@LCWL & @OdChessWorld",""],
+["Myanmar 🇲🇲","Team Myanmar","Team Myanmar | https://www.chess.com/club/team-myanmar","CATE, @LCWL & @webmonkey",""],
+["Nepal 🇳🇵","Nepal","Nepal | https://www.chess.com/club/nepal","@LCWL & @ShaknilGrg",""],
+["New Zealand 🇳🇿","Team New Zealand","Team New Zealand | https://www.chess.com/club/team-new-zealand","CATE, IPL, @Koalasis_Chess, @OG_BIG_PUN & @Aolan","Discord | https://discord.gg/9BE8aJmYwN ; Lichess | https://lichess.org/team/new-zealand-chess-federation"],
+["Australia 🇦🇺","Team Australia","Team Australia | https://www.chess.com/club/team-australia","@Kookaburrra*, @SPIRITOF_AUSTRALIA*, @mc-aarony & @Dylian_GBP",""],
+["Oman 🇴🇲","Team Oman","Team Oman | https://www.chess.com/club/team-oman3","@Rayyan_Layth",""],
+["Pakistan 🇵🇰","Chess Federation of Pakistan / Team Pakistan","Chess Federation of Pakistan | https://www.chess.com/club/chess-federation-of-pakistan ; Team Pakistan | https://www.chess.com/club/team-pakistan","@Yo_Kn1ght*, @mirsultanacademy, @itxSMG & @rohan_asif & CATE / @Ali-808 @Smalam","WhatsApp | https://whatsapp.com/channel/0029Vb3PVeLEwEjnC6JAIk2c"],
+["Palestine 🇵🇸 (WB)","Team Palestine","Team Palestine | https://www.chess.com/club/team-palestine","CATE, IPL, @Harionago & @Shetos_GrandMastar",""],
+["Papua New Guinea 🇵🇬","Papua New Guinea","Papua New Guinea | https://www.chess.com/club/papua-new-guinea","@Kookaburrra*, @SPIRITOF_AUSTRALIA* & @kavzee",""],
+["Qatar 🇶🇦","Qatar Chess Team","Qatar Chess Team | https://www.chess.com/club/qatar-chess-team","CATE, IPL, @Shetos_GrandMastar & @Harionago",""],
+["Hong Kong 🇭🇰","Team Hong Kong","Team Hong Kong | https://www.chess.com/club/team-hong-kong","@LCWL, @kwowkman, @Team-Hong-Kong-server & @Tevez-Cat","Federation Website | https://hkcfl.com/?fbclid=IwZXh0bgNhZW0CMTEAAR2KVB2LWkxDAQ3YpjEbapYFv4N4g_kBZswhylTeab1PTgw1SdHf_9K25y0_aem_s9y1psjWnBAE6ciV5TEYkQ ; Facebook | https://www.facebook.com/groups/361354860938196 ; Discord | https://discord.com/channels/835171728904683560"],
+["Singapore 🇸🇬","Team Singapore","Team Singapore | https://www.chess.com/club/team-singapore","@chessisfun4all88* & @boonthamchess",""],
+["Syria 🇸🇾","Team Syria","Team Syria | https://www.chess.com/club/team-syria","CATE, IPL, @Harionago, @SPIRITOF_AUSTRALIA* & @DirarD77",""],
+["Sri Lanka 🇱🇰","Chess Federation of Sri Lanka / SRI LANKAN CHESS","Chess Federation of Sri Lanka | https://www.chess.com/club/chess-federation-of-sri-lanka ; SRI LANKAN CHESS | https://www.chess.com/club/sri-lankan-chess","@malithakalanka / @King6DX, @Janaka-ifs & @Tharinda_Nimnajith","Facebook | https://www.facebook.com/groups/122563954489282 ; WhatsApp | https://chat.whatsapp.com/KQgCBwoE9ZyHUJFA2HNh9e ; Discord | https://discord.gg/he858YAh"],
+["Tajikistan 🇹🇯","Team Tajikistan","Team Tajikistan | https://www.chess.com/club/team-tajikistan","@bobojon1987",""],
+["Taiwan (Chinese Taipei) 🇹🇼","Team Taiwan","Team Taiwan | https://www.chess.com/club/team-taiwan-tai-wan","@Athena0930 & @licheass","Facebook | https://www.facebook.com/groups/291372254361799/"],
+["Thailand 🇹🇭","Team Thailand","Team Thailand | https://www.chess.com/club/team-thailand","CATE & @SecondgenBobby_Fischer",""],
+["Tonga 🇹🇴","Tonga","Tonga | https://www.chess.com/club/tonga","@Kookaburrra, @SPIRITOF_AUSTRALIA & @MunroBagger",""],
+["Turkmenistan 🇹🇲","Team Turkmenistan","Team Turkmenistan | https://www.chess.com/club/team-turkmenistan","@LCWL, @seyranhacibeyli & @batyrturkmen",""],
+["East Timor 🇹🇱","Team Timor Leste Chess","Team Timor Leste Chess | https://www.chess.com/club/team-timor-leste-chess","@Kookaburrra, @SPIRITOF_AUSTRSLIA & IPL",""],
+["Tuvalu 🇹🇻","Tuvalu / Tuvalu Chess","Tuvalu | https://www.chess.com/club/tuvalu ; Tuvalu Chess | https://www.chess.com/club/tuvalu-chess","@cortinadelpeso & @doubledogcatch / @Kookaburrra, @SPIRITOF_AUSTRSLIA & IPL",""],
+["French Polynesia (Tahiti) 🇵🇫","Federation Tahitiene Des Echecs","Federation Tahitiene Des Echecs | https://www.chess.com/club/federation-tahitienne-des-echecs","@cheztreize & @CFE-LFR-CFT","Team's Website | https://jpptahiti.com/ ; Olympic Website | https://papeeteolympiqueechecs.blogspot.com/"],
+["New Caledonia 🇳🇨","Team Nouvelle-Caledonie","Team Nouvelle-Caledonie | https://www.chess.com/club/team-nouvelle-caledonie","@Kookaburrra, @CFE-LFR-CFT , IPL & @Momojojojo",""],
+["Uzbekistan 🇺🇿","Team Uzbekistan / Uzchesss","Team Uzbekistan | https://www.chess.com/club/team-uzbekistan ; Uzchesss | https://www.chess.com/club/uzchesss","@umidjonrakhimov, @primer_chess & @konung7 (in T.U) / @Safarmurod_Uzchesss & @Shakhzod_Urokhov (in Uzc.)",""],
+["Vietnam 🇻🇳","Viêt Nam","Viêt Nam | https://www.chess.com/club/vit-nam","@nobita_isc & @M-DinhHoangViet",""],
+["Yemen 🇾🇪","Yemen Chess Team","Yemen Chess Team | https://www.chess.com/club/yemen-chess-team","CATE, IPL, @Harionago & @ibamhawal74",""],
+["Hawaii 🏝️🇺🇸","BIG ISLAND CHESS CLUB HAWAII","BIG ISLAND CHESS CLUB HAWAII | https://www.chess.com/club/big-island-chess-club-hawaii","CATE, @Oceandeepblue777* & @painuzumaki24",""],
+["American Samoa 🇦🇸","American Samoa Chess","American Samoa Chess | https://www.chess.com/club/american-samoa-chess","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Kiribati 🇰🇮","Team Kiribati Chess","Team Kiribati Chess | https://www.chess.com/club/team-kiribati-chess","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Niue 🇳🇺","Niue Chess","Niue Chess | https://www.chess.com/club/niue-chess","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Palau 🇵🇼","Palau Chess","Palau Chess | https://www.chess.com/club/palau-chess","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Solomon Islands 🇸🇧","Team Solomon Islands","Team Solomon Islands | https://www.chess.com/club/team-solomon-islands","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Micronesia 🇫🇲","Micronesia Chess","Micronesia Chess | https://www.chess.com/club/micronesia-chess","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Vanuatu 🇻🇺","Vanuatu Chess","Vanuatu Chess | https://www.chess.com/club/vanuatu-chess","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Samoa 🇼🇸","Samoa Chess","Samoa Chess | https://www.chess.com/club/samoa-chess","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Marshall Islands 🇲🇭","Marshall Islands Chess","Marshall Islands Chess | https://www.chess.com/club/marshall-islands-chess","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Northern Mariana Islands 🇲🇵","Northern Mariana Islands Chess","Northern Mariana Islands Chess | https://www.chess.com/club/northern-mariana-islands-chess","@Kookaburrra, @SPIRITOF_AUSTRALIA & @INTL_PREMIER_LEAGUE",""],
+["Naeoro 🇳🇷","Nauru Chess Federation / Team Nauru Naeoro","Nauru Chess Federation | https://www.chess.com/club/nauru-chess-federation ; Team Nauru Naeoro | https://www.chess.com/club/nauru-chess","@Rickod1 & @ReneDube / @Kookaburrra, @SPIRITOF_AUSTRSLIA & IPL",""],
+["Albania🇦🇱","Albania Team","Albania Team | https://www.chess.com/club/albania-team","@Bezzart, @DnA-Z & @heraldii",""],
+["Andorra🇦🇩","Andorra Chess Federation","Andorra Chess Federation | https://www.chess.com/club/andorra-chess-federation","@emateu26 & @oskychess","Website | https://www.escacsandorra.com/ ; Blog | https://www.chess.com/blog/escacsandorra"],
+["Austria🇦🇹","Team Austria","Team Austria | https://www.chess.com/club/team-austria","@_Henry_ & @marclautrichien","Viplugin | http://www.viplugin.com/team_austria_chat.html"],
+["Belarus🇧🇾","Belarus","Belarus | https://www.chess.com/club/belarus","@hervasij_vylivaha",""],
+["Belgium🇧🇪","Team Belgium","Team Belgium | https://www.chess.com/club/team-belgium","@Godefroy_De_Bouillion & @hotwax",""],
+["Bosnia and Herzegovina 🇧🇦","Bosnia and Herzegovina","Bosnia and Herzegovina | https://www.chess.com/club/bosnia-and-herzegovina","@O_Mirza, @tomahhawk & @rtutic","Facebook | https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2Fgroups%2F2318188618483303"],
+["Bulgaria🇧🇬","Bulgaria / Team Bulgaria Live / Team Bulgaria","Bulgaria | https://www.chess.com/club/bulgaria ; Team Bulgaria Live | https://www.chess.com/club/team-bulgaria-live ; Team Bulgaria | https://www.chess.com/club/team-bulgaria2","@Nick_Zhechkov, @pistons* & @panstoy* (in .BG) / @Valyo1954 & @bul_master (in T.B.L) / @stefanakis90",""],
+["Cyprus 🇨🇾","Team Cyprus","Team Cyprus | https://www.chess.com/club/team-cyprus","@johanpalmaer",""],
+["Czech Republic 🇨🇿","Czechmate Chess / Team of the Czech Republic","Czechmate Chess | https://www.chess.com/club/czechmate-chess ; Team of the Czech Republic | https://www.chess.com/club/team-of-the-czech-republic","@jakeaarons (in Cz.C) / @Dale00007, @ivoshm & @CedrHask ( in T.C.R.)","Website | http://www.chess.cz/"],
+["Croatia🇭🇷","Team Croatia / Croatian Chess Academy","Team Croatia | https://www.chess.com/club/team-croatia ; Croatian Chess Academy | https://www.chess.com/club/croatian-chess-academy","@goraskok, @Tomislav_1979 & @Karlo0909 (in T.C.) / @JasminOcelli, CATE & IPL (in CCA)",""],
+["Denmark🇩🇰","Team Denmark Live","Team Denmark Live | https://www.chess.com/club/team-denmark-live","@FidibusRunner & @paskbr",""],
+["Estonia🇪🇪","Team Estonia","Team Estonia | https://www.chess.com/club/team-estonia","@slavarosin & @DevCose",""],
+["Switzerland 🇨🇭","Team Schweiz-Suisse-Svizzera / Swiss Legends","Team Schweiz-Suisse-Svizzera | https://www.chess.com/club/team-schweiz-suisse-svizzera ; Swiss Legends | https://www.chess.com/club/swiss-legends","@Alde1984 & @Tudorache_M / CATE, @Javokhir_Spirit & @Royals_Chess_Club",""],
+["Faroe Islands 🇫🇴","Team Faroe Islands","Team Faroe Islands | https://www.chess.com/club/team-faroe-islands","@NikolajHK & @FidibusRunner",""],
+["Finland 🇫🇮","Team Finland","Team Finland | https://www.chess.com/club/team-finland","@RucaDestiny & @Aldrin",""],
+["France 🇫🇷","Team France","Team France | https://www.chess.com/club/team-france","CATE, IPL @Ximoon, @Rookover & @Kyu13","Discord | https://discord.gg/npZwzNNDcT ; Twitter (X) | https://twitter.com/TeamFrance9 ; Blog | https://www.chess.com/blog/teamfrance"],
+["Galicia⬜🟦⬜","Team Galicia","Team Galicia | https://www.chess.com/club/team-galicia","@Trevizer*, @MestreCesar & @damafe","Twitter (X) | https://twitter.com/galicia_team"],
+["Germany🇩🇪","Chess.com Deutsch / Team Germany / Deutscher Schachbund DSB","Chess.com Deutsch | https://www.chess.com/club/chess-com-deutsch ; Team Germany | https://www.chess.com/club/team-germany ; Deutscher Schachbund DSB | https://www.chess.com/club/deutscher-schachbund-dsb","@chesscomDE & @LordWinter30 (in C.c.DE) / @newgoals, @zindal & @phiba07 / @DSB-DeutscherSchachbund & @Walter-Selachii","Twitter (X) | https://x.com/chesscom_de ; YouTube | https://www.youtube.com/channel/UCn2gdzWXFplIcfKwepavTjw ; Facebook | https://www.facebook.com/chesscom.de"],
+["Greece 🇬🇷","Greek Arena / Team Greece","Greek Arena | https://www.chess.com/club/greek-arena ; Team Greece | https://www.chess.com/club/team-greece","@greekindian & @cartmaniac / @Anastasakis & @Vasilis_64",""],
+["Iceland 🇮🇸","Team Iceland","Team Iceland | https://www.chess.com/club/team-iceland","@LCWL & @Th3ChessViking",""],
+["Ireland 🇮🇪","Team Ireland / Irish Team","Team Ireland | https://www.chess.com/club/team-ireland ; Irish Team | https://www.chess.com/club/irish-team-1","@ImperfectAge & @floydreunion2005 / CATE & @DaraFlem",""],
+["Israel 🇮🇱","Team Israel","Team Israel | https://www.chess.com/club/team-israel","@tidi & @elkanakeller27",""],
+["Italy 🇮🇹","Team Italia","Team Italia | https://www.chess.com/club/team-italia","CATE, IPL, @lixiansky, @sicily_boy, @1NLucaMusca11, @racine6 & @NM_Antelacus","Twitch | http://www.twitch.tv/antelacus"],
+["United Kingdom 🇬🇧","Team United Kingdom","Team United Kingdom | https://www.chess.com/club/team-united-kingdom-1","@LCWL, @PaulyD81, @Kookaburrra*, @TUK-ADAM, @ACM_ArthurKhachaturyan* & @Ferrarifan27",""],
+["Latvia 🇱🇻","Team Latvia","Team Latvia | https://www.chess.com/club/team-latvia","@KraBel2608",""],
+["Lithuania 🇱🇹","Team Lithuania","Team Lithuania | https://www.chess.com/club/team-lithuania","@Darius87 & @KevinGarnet",""],
+["Liechtenstein 🇱🇮","Team Liechtenstein","Team Liechtenstein | https://www.chess.com/club/team-liechtenstein","CATE, @Maestro_Q & @Castle0-0-0*",""],
+["North Macedonia 🇲🇰","Macedonia Forever","Macedonia Forever | https://www.chess.com/club/macedonia-forever","@LCWL, @stole-kosuta & @slavco-j",""],
+["Malta 🇲🇹","Team Malta","Team Malta | https://www.chess.com/club/team-malta","@kavall & @dmangion",""],
+["Monaco 🇲🇨","Mónaco Chess Club","Mónaco Chess Club | https://www.chess.com/club/m-naco-chess-club","@Scarlett_Ash & CATE",""],
+["Montenegro 🇲🇪","Crna Gora","Crna Gora | https://www.chess.com/club/crna-gora","@Cothurnatus, @RoaringPawn & @M_Djikanovic",""],
+["Norway 🇳🇴","Norway-Norge / Team Norway","Norway-Norge | https://www.chess.com/club/norway-norge-1 ; Team Norway | https://www.chess.com/club/team-norway","CATE & @jobitten1 / @Petter_U @toomanyprojects","Facebook | https://www.facebook.com/groups/27623375417292200/"],
+["Poland 🇵🇱","Chess.com Polska","Chess.com Polska | https://www.chess.com/club/chess-com-polska","@SigmaM8, @chesscomPL & @Pizza-Gambit","YouTube | https://www.youtube.com/c/chesscomPL ; Twitch | https://www.twitch.tv/chesscompl ; Facebook | https://www.facebook.com/chesscom.polska/"],
+["Portugal 🇵🇹","Team Portugal","Team Portugal | https://www.chess.com/club/team-portugal","@Xico_Xico & @jcoehlo72",""],
+["Moldova 🇲🇩","Team Moldova","Team Moldova | https://www.chess.com/club/team-moldova","@DorinN69 & @Andrei-MD",""],
+["Romania 🇷🇴","Team Romania","Team Romania | https://www.chess.com/club/team-romania","@lvali40, @herghe, @DorinN69 & @RomanaChisu","Facebook Team | https://www.facebook.com/chess.team.romania ; Facebook Federation | https://www.facebook.com/FRSah.ro ; WhatsApp | https://chat.whatsapp.com/CC7JqodTFmrCuVhPdCRTpM ; Lichess | https://lichess.org/team/romania-live-chess"],
+["Russia 🇷🇺","Team Russia","Team Russia | https://www.chess.com/club/team-russia-komanda-rossii","@juni-90, @spolkonikov & @nevfi","VK | https://vk.com/chesscomru ; Facebook | https://www.facebook.com/chesscom.ru ; Twitter (X) / | https://twitter.com/chesscom_ru ; Telegram | https://t.me/chesscom_ru ; Twitch | https://www.twitch.tv/chesscomru ; YouTube | https://www.youtube.com/chesscomRU"],
+["Serbia 🇷🇸","Srbija Tim","Srbija Tim | https://www.chess.com/club/srbija-tim","@LCWL, @grujicdragan, @cojle, @Laki_69 & @pantic1","Facebook Team | https://www.facebook.com/srbijatimchess/ ; Facebook Group | https://www.facebook.com/groups/srbijatimchess/ ; Viber | https://invite.viber.com/?g2=AQAi1PXLV5UxPlJCTlV7KNPxHzrvePafDOyRmg3CPqiSz0H47b9yCUODpYajKpi4 ; WhatsApp | https://chat.whatsapp.com/IzRQswolIrxFwm71h29gAi ; Lichess | https://lichess.org/team/srbija-tim ; Website C-Srb | https://serbiachess.org/ ; Website Sah-Srb | https://serbiachess.org/ ; Website Beo-Ch | https://sah-centralnasrbija.org/"],
+["Slovakia 🇸🇰","Team of Slovak Players / Slovak Chess Club / Team Slovakia","Team of Slovak Players | https://www.chess.com/club/team-of-slovak-players ; Slovak Chess Club | https://www.chess.com/club/slovak-chess-club ; Team Slovakia | https://www.chess.com/club/team-slovakia","@Markof, @laki2, @IgorPavlus & @you_did_what / @Janko100 & @Palko1 / @SlovakAustralia @mkreps",""],
+["Slovenia 🇸🇮","Team Slovenija","Team Slovenija | https://www.chess.com/club/team-slovenija","IPL, @CapaHimself, @Ziga1105 & @barbara25",""],
+["Spain 🇪🇸","Team Spain Live","Team Spain Live | https://www.chess.com/club/team-spain-live","@Mrlopsonknight, @CaballoNegrodeRey & @TheVikingPotato",""],
+["Vatican City 🇻🇦","TVC Team-Vatican-City","TVC Team-Vatican-City | https://www.chess.com/club/tvc-team-vatican-city","CATE, @Dante_CMorselli, @Almirante_Oeste & @pomb113",""],
+["Sweden 🇸🇪","Team Sweden","Team Sweden | https://www.chess.com/club/team-sweden","CATE, @utbivasan3, @MAGNUSN1975, @roger987 & @TeamSwedenOfficial","Website | https://sites.google.com/view/team-sweden/home?authuser=2 ; Ko-Fi | https://ko-fi.com/teamswedenofficial ; Patreon | https://patreon.com/TeamSwedenChessOfficial?utm_medium=unknown&amp;utm_source=join_link&amp;utm_campaign=creatorshare_creator&amp;utm_content=copyLink ; Discord | https://discord.com/channels/1091822294223040614/1091829223271960626"],
+["Türkiye 🇹🇷","Türkiye Chess Players / Team Türkiye","Türkiye Chess Players | https://www.chess.com/club/turkiye-chess-players ; Team Türkiye | https://www.chess.com/club/team-turkiye-2","@Ondermertt & @mdv1982 / @seyranhacibeyli, @xhantian & @TakoGM","Lichess | https://lichess.org/team/santranc-oynamay-bilenler-katlsn ; Facebook | https://www.facebook.com/groups/TeamTurkey.chess"],
+["Netherlands 🇳🇱","team Nederland / Chess Team Holland","team Nederland | https://www.chess.com/club/team-nederland-2 ; Chess Team Holland | https://www.chess.com/club/chess-team-holland","IPL, @hynderDurk, @herdwars & @elkanakeller27 / @havikje@Cerberos","Discord | https://discord.gg/NQFmf3sqpg"],
+["Ukraine 🇺🇦","Team Ukraine / Team Ukraine Live Chess / Chess School Ukraine","Team Ukraine | https://www.chess.com/club/team-ukraine ; Team Ukraine Live Chess | https://www.chess.com/club/team-ukraine-live-chess ; Chess School Ukraine | https://www.chess.com/club/chess-school-ukraine","CATE, IPL & @CCMdizxxvns (in T.U.L.C) / @AlexanderMatlak, @UAArtur & @rainspistols / @Eva3337 & @isaminin","Telegram | https://t.me/Team_Ukraine_chesscom ; Facebook | https://www.facebook.com/chessteamukraine ; Twitch | https://www.chess.com/uk/tv"],
+["Hungary 🇭🇺","Team Hungary - Magyar Sakkegylet","Team Hungary - Magyar Sakkegylet | https://www.chess.com/club/team-hungary---magyar-sakkegylet","@Crick3t & @DirkDiggler","Facebook | https://www.facebook.com/groups/2576914515896947"],
+["Gibraltar 🇬🇮","Gibraltar","Gibraltar | https://www.chess.com/club/gibraltar","@MunroBagger & @Kookaburrra",""],
+["Isle of Man 🇮🇲","The Isle of Man","The Isle of Man | https://www.chess.com/club/the-isle-of-man","@Taxavoider, @Kookaburrra* & @MunroBagger",""],
+["Channel Islands 🇬🇬","Team Channel Islands","Team Channel Islands | https://www.chess.com/club/team-channel-islands","@Soulbrother11 @BobSnellGsy",""],
+["Anguilla 🇦🇮","Anguilla Chess Team","Anguilla Chess Team | https://www.chess.com/club/anguilla-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Aruba 🇦🇼","Aruba Chess Team","Aruba Chess Team | https://www.chess.com/club/aruba-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Bahamas 🇧🇸","Bahamas Chess Team","Bahamas Chess Team | https://www.chess.com/club/bahamas-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Barbados 🇧🇧","Barbados Chess Team","Barbados Chess Team | https://www.chess.com/club/barbados-chess-team-1","@INTL_PREMIER_LEAGUE",""],
+["Belize 🇧🇿","Belize Chess Team","Belize Chess Team | https://www.chess.com/club/belize-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Bermuda 🇧🇲","Bermuda Chess Team","Bermuda Chess Team | https://www.chess.com/club/bermuda-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Cayman Islands 🇰🇾","Cayman Islands","Cayman Islands | https://www.chess.com/club/cayman-islands","@INTL_PREMIER_LEAGUE",""],
+["Costa Rica 🇨🇷","Equipo de Costa Rica","Equipo de Costa Rica | https://www.chess.com/club/equipo-de-costa-rica","@INTL_PREMIER_LEAGUE",""],
+["Cuba 🇨🇺","Cuba Chess Team","Cuba Chess Team | https://www.chess.com/club/cuba-chess-team","@INTL_PREMIER_LEAGUE","WhatsApp Cuba | https://chat.whatsapp.com/IRWFYmQSovd99osLTJ17w0?mode=wwt"],
+["Curaçao 🇨🇼","Team Curaçao","Team Curaçao | https://www.chess.com/club/team-curacao-1","@INTL_PREMIER_LEAGUE",""],
+["Dominica 🇩🇲","Dominica Chess Team","Dominica Chess Team | https://www.chess.com/club/dominica-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Grenada 🇬🇩","Grenada Chess Team","Grenada Chess Team | https://www.chess.com/club/grenada-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Guadeloupe 🇬🇵","Team Guadeloupe","Team Guadeloupe | https://www.chess.com/club/team-guadeloupe","@INTL_PREMIER_LEAGUE",""],
+["Guatemala 🇬🇹","Equipo de Guatemala","Equipo de Guatemala | https://www.chess.com/club/equipo-de-guatemala","@INTL_PREMIER_LEAGUE",""],
+["Guyana 🇬🇾","Guyana Chess Team","Guyana Chess Team | https://www.chess.com/club/guyana-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Honduras 🇭🇳","Equipo de Honduras","Equipo de Honduras | https://www.chess.com/club/equipo-de-honduras","@INTL_PREMIER_LEAGUE",""],
+["Jamaica 🇯🇲","Jamaica Chess Team","Jamaica Chess Team | https://www.chess.com/club/jamaica-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Montserrat 🇲🇸","Montserrat Chess Team","Montserrat Chess Team | https://www.chess.com/club/montserrat-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Puerto Rico 🇵🇷","Equipo de Puerto Rico","Equipo de Puerto Rico | https://www.chess.com/club/equipo-de-puerto-rico","@INTL_PREMIER_LEAGUE",""],
+["Saint Lucia 🇱🇨","Saint Lucia Chess Team","Saint Lucia Chess Team | https://www.chess.com/club/saint-lucia-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Saint Kitts & Nevis 🇰🇳","Team Saint Kitts+Nevis","Team Saint Kitts+Nevis | https://www.chess.com/club/team-saint-kitts-nevis","@INTL_PREMIER_LEAGUE",""],
+["Suriname 🇸🇷","Team Suriname","Team Suriname | https://www.chess.com/club/team-suriname","@INTL_PREMIER_LEAGUE",""],
+["Trinidad & Tobago 🇹🇹","Team Trinidad and Tobago","Team Trinidad and Tobago | https://www.chess.com/club/team-trinidad-and-tobago","@INTL_PREMIER_LEAGUE",""],
+["Sint Maarten 🇸🇽","Sint Maarten Chess Team","Sint Maarten Chess Team | https://www.chess.com/club/sint-maarten-chess-team","@INTL_PREMIER_LEAGUE",""],
+["Turks & Caicos 🇹🇨","Team Turks and Caicos","Team Turks and Caicos | https://www.chess.com/club/team-turks-and-caicos","@INTL_PREMIER_LEAGUE",""],
+["US Virgin Islands 🇻🇮","Team US Virgin Islands","Team US Virgin Islands | https://www.chess.com/club/team-us-virgin-islands-1","@INTL_PREMIER_LEAGUE",""],
+["British Virgin Islands 🇻🇬","British Virgin Islands Chess","British Virgin Islands Chess | https://www.chess.com/club/british-virgin-islands-chess","@INTL_PREMIER_LEAGUE",""],
+["St. Vincent & Grenadines 🇻🇨","Team St. Vincent and the Grenadines","Team St. Vincent and the Grenadines | https://www.chess.com/club/team-st-vincent-and-the-grenadines","@INTL_PREMIER_LEAGUE",""]
+];
+var CITIES=[
+["ICE 🇮🇸 Reykjavik","Reykjavík-Skólar","Reykjavík-Skólar | https://www.chess.com/club/reykjavík-skolar","@kgautason",""]
+,
+["IRL 🇮🇪 Dublin","Team Dublin","Team Dublin | https://www.chess.com/club/team-dublin","@Kookaburrra",""]
+,
+["SCO 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Glasgow","Glasgow","Glasgow | https://www.chess.com/club/glasgow","@rogerthecabinboy",""]
+,
+["SCO 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Edinburgh","Team Edinburgh","Team Edinburgh | https://www.chess.com/club/team-edinburgh","@chessd00f",""]
+,
+["NIR 🏳️ Belfast","Belfast City Chess Club","Belfast City Chess Club | https://www.chess.com/club/belfast-city-chess-club","@RoamingKnight001",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 London","London","London | https://www.chess.com/club/london","@Markh01 & @PaulyD81",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Birmingham","Team Birmingham","Team Birmingham | https://www.chess.com/club/team-birmingham","@danielp1988 & @MattTheShield",""]
+,
+["ESP 🇪🇦 Madrid","Equipo Madrid","Equipo Madrid | https://www.chess.com/club/equipo-madrid","@BOTE1974",""]
+,
+["ESP 🇪🇦 Barcelona","Team Barcelona","Team Barcelona | https://www.chess.com/club/team-barcelona","@MortadeloKing & @Serpi",""]
+,
+["ESP 🇪🇦 Sevilla","Equipo Sevilla","Equipo Sevilla | https://www.chess.com/club/equipo-sevilla","@aflfooty",""]
+,
+["PRT 🇵🇹 Lisbon","Team Lisboa","Team Lisboa | https://www.chess.com/club/team-lisboa","@jcoelho72 & @LMCDuarte",""]
+,
+["FRA 🇨🇵 Paris","Team Paris","Team Paris | https://www.chess.com/club/team-paris","@PierreWxP & @Wanet",""]
+,
+["FRA 🇨🇵 Marseille","Team Marseille - Massilia","Team Marseille - Massilia | https://www.chess.com/club/team-marseille-massilia","@Kookaburrra, @CFE-LFR-CFT & @Chopin_98",""]
+,
+["FRA 🇫🇷 Bordeaux","Bordeaux","Bordeaux | https://www.chess.com/club/bordeaux","@Rookover, @Cheztreize & @CFE-LFR-CFT",""]
+,
+["NED 🇳🇱 Amsterdam","SV Amsterdam West","SV Amsterdam West | https://www.chess.com/club/sv-amsterdam-west","@smuis & @cass80",""]
+,
+["SWI 🇨🇭 Geneva","Club d'échec Genève Geneva Genf - Suisse Switzerland Schweiz","Club d'échec Genève Geneva Genf - Suisse Switzerland Schweiz | https://www.chess.com/club/club-dechec-geneve-geneva-genf-suisse-switzerland-schweiz","@GabGVA & @Baarms",""]
+,
+["ITA 🇮🇹 Rome","ROMA","ROMA | https://www.chess.com/club/roma-1","@racine6",""]
+,
+["ITA 🇮🇹 Napoli","Team Napoli-Campania","Team Napoli-Campania | https://www.chess.com/club/team-napoli-campania","@Zar_70",""]
+,
+["ITA 🇮🇹 Torino","Team Torino","Team Torino | https://www.chess.com/club/team-torino","@DanielleAirola & @Giampiero111",""]
+,
+["DEU 🇩🇪 Berlin","Team Berlin","Team Berlin | https://www.chess.com/club/team-berlin","@Chofarov",""]
+,
+["DEU 🇩🇪 Stuttgart","Stuttgarters","Stuttgarters | https://www.chess.com/club/stuttgarters","@nicktz1408 & @IliasTsagas",""]
+,
+["DEU 🇩🇪 Hamburg","Hamburg City","Hamburg City | https://www.chess.com/club/hamburg-city","@BOTE1974",""]
+,
+["AUT 🇦🇹 Vienna","Team Wien","Team Wien | https://www.chess.com/club/team-wien","@_Henry_",""]
+,
+["NOR 🇧🇻 Oslo","Oslo og hamar Sjakkclubb","Oslo og hamar Sjakkclubb | https://www.chess.com/club/oslo-og-hamar-sjakklubb","",""]
+,
+["SWE 🇸🇪 Stockholm","Stockholm Chess Club","Stockholm Chess Club | https://www.chess.com/club/stockholm-chess-club","",""]
+,
+["FIN 🇫🇮 Helsinki","Shakkilinnna Helsinki","Shakkilinnna Helsinki | https://www.chess.com/club/shakkilinna-helsinki","",""]
+,
+["EST 🇪🇪 Tallinn","Tallinn Chess Team","Tallinn Chess Team | https://www.chess.com/club/tallinn-chess-team","@kooriviam & @joonasp",""]
+,
+["LAT 🇱🇻 Riga","Rigas Saha Skola","Rigas Saha Skola | https://www.chess.com/club/rigas-saha-skola","@amatatanav",""]
+,
+["POL 🇵🇱 Warsaw","Team Warsaw","Team Warsaw | https://www.chess.com/club/team-warsaw","@PawnInTheGame",""]
+,
+["POL 🇵🇱 Krakow","Team Cracow","Team Cracow | https://www.chess.com/club/team-cracow","@Sulima",""]
+,
+["CZE 🇨🇿 Prague","Team Prague","Team Prague | https://www.chess.com/club/team-prague","@Dale0007 & @LancelotDuLac",""]
+,
+["CZE 🇨🇿 Brno","Brno","Brno | https://www.chess.com/club/brno","@Vezekmin & @lamanchacz",""]
+,
+["SVK 🇸🇰 Bratislava","Team Bratislava","Team Bratislava | https://www.chess.com/club/team-bratislava","@security1985 & @enoshan",""]
+,
+["SVK 🇸🇰 Tlmace","Tlmace","Tlmace | https://www.chess.com/club/tlmace","@KikoBBX & @snyco",""]
+,
+["UKR 🇺🇦 Kyiv","Kyiv Chess Club","Kyiv Chess Club | https://www.chess.com/club/kyiv-chess-club","@adriano81","Facebook | https://www.facebook.com/groups/670782013470135/"]
+,
+["UKR 🇺🇦 Lviv","Team Lviv","Team Lviv | https://www.chess.com/club/team-lviv","@karina55 & @SergijTymchuk",""]
+,
+["UKR 🇺🇦 Dnipro","Team Dnipro","","@serhiivolokh & @eduard_1980",""]
+,
+["ROU 🇷🇴 Bucharest","Team Bucharest","Team Bucharest | https://www.chess.com/club/team-bucharest","@lvali40 & @costinc19",""]
+,
+["ROU 🇷🇴 Sfântu Gheorghe","Șah-Mat Sfântu Gheorghe","Șah-Mat Sfântu Gheorghe | https://www.chess.com/club/sah-mat-sfantu-gheorghe","@Bold17A & @ACSTuraDeSah","WhatsApp | https://chat.whatsapp.com/DdAptLM0iVJGYldN9zdPfi?s=cl&amp;p=a&amp;mlu=4&amp;ilr=4"]
+,
+["ROU 🇷🇴 Oradea","Șah Club Oradea","Șah Club Oradea | https://www.chess.com/club/sah-club-oradea","@fle69 & @Tudorache_M",""]
+,
+["HRV 🇭🇷 Zagreb","Team Zagreb","Team Zagreb | https://www.chess.com/club/team-zagreb","@tomislav_1979 & @zvonimirz",""]
+,
+["HRV 🇭🇷 Zadar","Šahovski Klub Zadar","Šahovski Klub Zadar | https://www.chess.com/club/scaronahovski-klub-zadar","",""]
+,
+["BIH 🇧🇦 Sarajevo","SK Sarajevo","SK Sarajevo | https://www.chess.com/club/sk-sarajevo","@Nezh2455",""]
+,
+["SRB 🇷🇸 Belgrade","Team Beograd","Team Beograd | https://www.chess.com/club/team-beograd","@grujicdragan & @nemirena",""]
+,
+["SRB 🇷🇸 Novi Sad","SK Bubamara - Novi Sad","SK Bubamara - Novi Sad | https://www.chess.com/club/sk-bubamara-novi-sad","@nsk22",""]
+,
+["SRB 🇷🇸/XKX 🇽🇰 Prishtina","Team Prishtina","Team Prishtina | https://www.chess.com/club/team-prishtina","@armendmulakaj1984 & @kali_i_bekuar",""]
+,
+["HUN 🇭🇺 Budapest","Team of Budapest","Team of Budapest | https://www.chess.com/club/team-of-budapest","@atudor60 & @karina_e",""]
+,
+["RUS 🇷🇺 Moscow","Team Moscow","Team Moscow | https://www.chess.com/club/team-moscow","@kirill_genius",""]
+,
+["RUS 🇷🇺 Sankt-Petersburg","Team St. Petersburg","Team St. Petersburg | https://www.chess.com/club/team-st-petersburg","@demimur & @kuroman",""]
+,
+["RUS 🇷🇺 Rostov-on-Don","RostovChessClub","RostovChessClub | https://www.chess.com/club/rostovchessclub","@kirill_reva",""]
+,
+["BUL 🇧🇬 Sofia","Team Sofia","Team Sofia | https://www.chess.com/club/team-sofia","@panstoy & @Valyo1954",""]
+,
+["BUL 🇧🇬 Plovdiv","Plovdiv","Plovdiv | https://www.chess.com/club/plovdiv","@pistons",""]
+,
+["ALB 🇦🇱 Tirana","Team Tirana","Team Tirana | https://www.chess.com/club/team-tirana","@kali_i_bekuar",""]
+,
+["TÜR 🇹🇷 Istanbul","Istanbul","Istanbul | https://www.chess.com/club/istanbul-1","@xhantian & @byuzak",""]
+,
+["TÜR 🇹🇷 Izmir","Team Izmir","Team Izmir | https://www.chess.com/club/team-izmir","@sademh & @ege_izmir",""]
+,
+["ISR 🇮🇱  East Jerusalem","Jerusalem Chess Club","Jerusalem Chess Club | https://www.chess.com/club/jerusalem-chess-club","@tomershush",""]
+,
+["GEO 🇬🇪 Tbilisi","Team Tbilisi","Team Tbilisi | https://www.chess.com/club/team-tbilisi","@paata68",""]
+,
+["ARM 🇦🇲 Yerevan","Yerevan","Yerevan | https://www.chess.com/club/yerevan","@Gevorg1983 & @888har888",""]
+,
+["AZE 🇦🇿 Baku","Team Baku","Team Baku | https://www.chess.com/club/team-baku","@seyranhacibeyli & @Garadaghli",""]
+,
+["AZE 🇦🇿 Khankendi","Team Khankendi","Team Khankendi | https://www.chess.com/club/team-khankendi","@seyranhacibeyli & @riadfuadoglu77",""]
+,
+["KSA 🇸🇦 Jeddah","Jeddah Champs","Jeddah Champs | https://www.chess.com/club/jeddah-champs","",""]
+,
+["KSA 🇸🇦 Riyadh","Riyadh Chess Group","Riyadh Chess Group | https://www.chess.com/clubs/about/riyadh-chess-group","@Dr-A-Shalaby & @Ibrahim_Master","Facebook | https://www.facebook.com/ramabahy"]
+,
+["IRQ 🇮🇶 Baghdad","Team Baghdad","Team Baghdad | https://www.chess.com/club/team-baghdad","@Saieb_Khahil",""]
+,
+["UAE 🇦🇪 Dubai","Dubai Chess","Dubai Chess | https://www.chess.com/club/dubai-chess","@walid34",""]
+,
+["IRI 🇮🇷 Tehran","Team Tehran.","Team Tehran. | https://www.chess.com/club/tehran","@Mobarez",""]
+,
+["IRI 🇮🇷 Kish Island","Team Kish Island","Team Kish Island | https://www.chess.com/club/team-kish-island","@Kiavash21 & @hani_caspian","Website | http://www.irchessgroup.ir/"]
+,
+["KAZ 🇰🇿 Astana (Nur-Sultan)","YWK Astana","YWK Astana | https://www.chess.com/club/tsshk-astana-1","@Azamat_Aubakirov & @Bayanski",""]
+,
+["PAK 🇵🇰 Islamabad","Islamabad Chess Association","Islamabad Chess Association | https://www.chess.com/club/islamabad-chess-association","@Shujaat_ALI & @SHAIMANOV-7","Website | http://www.icaofficial.com/"]
+,
+["IND 🇮🇳 New Delhi","Team New Delhi","Team New Delhi | https://www.chess.com/club/team-new-delhi","@VIDYUTGANESH & @JuditSztaray",""]
+,
+["IND 🇮🇳 Uttar Pradesh","Chess.com Uttar-Pradesh","Chess.com Uttar-Pradesh | https://www.chess.com/club/chess-com-uttar-pradesh","@Shikharthechampionn & @UttarPradesh-India",""]
+,
+["IND 🇮🇳 Jaipur","Chess in Jaipur","Chess in Jaipur | https://www.chess.com/club/chess-in-jaipur","@Vansh & @Nonz",""]
+,
+["NEP 🇳🇵 Kathmandu","Kathmandu University Chess","Kathmandu University Chess | https://www.chess.com/club/kathmandu-university-chess","@hehe_np",""]
+,
+["BNG 🇧🇩 Dhaka","Dhaka","Dhaka | https://www.chess.com/club/dhaka","@AfiyaJr & @Nibir2",""]
+,
+["BNG 🇧🇩 Chittagong","Chess Club Chittagong","Chess Club Chittagong | https://www.chess.com/club/chess-club-chittagong","@swohid",""]
+,
+["THA 🇹🇭 Bangkok","Bangkok Chess Club","Bangkok Chess Club | https://www.chess.com/club/bangkok-chess-club","@Poompat, @Kosakarika & @DalaiLuke","Website | http://www.bangkokchess.com/"]
+,
+["KAM 🇰🇭 Phnom Penh","Phnom Penh Checkmate Club","Phnom Penh Checkmate Club | https://www.chess.com/club/phnom-penh-checkmate-club","@bgzack007 & @Khmerchessking4",""]
+,
+["IDN 🇮🇩 Jakarta","Jakarta Chess Club","Jakarta Chess Club | https://www.chess.com/club/jakarta-chess-club","@ssakti & @aimammt",""]
+,
+["IDN 🇮🇩 Surabaya","Labkesmas Surabaya","Labkesmas Surabaya | https://www.chess.com/club/labkesmas-surabaya","@nanang-ag",""]
+,
+["PHL 🇵🇭 Manila","Manila City","Manila City | https://www.chess.com/club/manila-city","@RayDuqueIII & @Spoiled-2014",""]
+,
+["SKO 🇰🇷 Seoul","Seoul National University","Seoul National University | https://www.chess.com/club/seoul-national-university","@MSNMl",""]
+,
+["SKO 🇰🇷 Daegu","Daegu Chess Club","Daegu Chess Club | https://www.chess.com/club/daegu-chess-club","@DarthHorsey",""]
+,
+["JPN 🇯🇵 Tokyo","Team Tokyo","Team Tokyo | https://www.chess.com/club/team-tokyo","@Hemdani & @KakashiHatake2",""]
+,
+["PRC 🇨🇳 Shanghai","Shanghai Chess Club","","@frankzym & @horuschina05",""]
+,
+["PRC 🇨🇳 Beijing","Beijing Chess Lovers Club","Beijing Chess Lovers Club | https://www.chess.com/club/beijing-chess-lovers-club","@simplybummo",""]
+,
+["AUS 🇦🇺 Sydney","Team Australia-Sydney NSW","Team Australia-Sydney NSW | https://www.chess.com/club/team-australia-sydney-nsw","@Kookaburrra & @SPIRITOF_AUSTRALIA",""]
+,
+["AUS 🇦🇺 Melbourne","Team Australia-Melbourne VIC","Team Australia-Melbourne VIC | https://www.chess.com/club/team-australia-melbourne-vic","@Durny & @19Andrew64",""]
+,
+["AUS 🇦🇺 Adelaide","Team Australia Adelaide SA","Team Australia Adelaide SA | https://www.chess.com/club/team-australia-adelaide-sa","@Kookaburrra & @mc-aarony",""]
+,
+["MAR 🇲🇦 Rabat","Rabat Chess Knights","Rabat Chess Knights | https://www.chess.com/rabat-chess-knights","@LORD_KOLO",""]
+,
+["EGY 🇪🇬 Cairo","Cairo Chess Club","Cairo Chess Club | https://www.chess.com/club/cairo-chess-club","@hos11sam","WhatsApp | https://chat.whatsapp.com/IGx7gH3ma5YKowu4giyWRc"]
+,
+["EGY 🇪🇬 Alexandria","Alexandria","Alexandria | https://www.chess.com/club/alexandria","@sherif68 & @elikhen",""]
+,
+["CAM 🇨🇲 Douala","Douala Chess","Douala Chess | https://www.chess.com/club/douala-chess","@zigfried1-3",""]
+,
+["DRC 🇨🇩 Kinshasa","Kinshasa Club Chess","Kinshasa Club Chess | https://www.chess.com/club/kinshasa-club-chess","@W3772",""]
+,
+["KEN 🇰🇪 Nairobi","Nairobi Chess Club","Nairobi Chess Club | https://www.chess.com/club/nairobi-chess-club","@NairobiCC & @willysimons","Website | http://www.nairobichessclub.com/"]
+,
+["ZMB 🇿🇼 Harare","Harare Chess League","Harare Chess League | https://www.chess.com/club/harare-chess-league","@sylvestermudau",""]
+,
+["RSA 🇿🇦 Cape Town","Just Cape Town","Just Cape Town | https://www.chess.com/club/just-cape-town","",""]
+,
+["RSA 🇿🇦 Port Elizabeth","Port Elizabeth Chess Club","Port Elizabeth Chess Club | https://www.chess.com/club/pe-chess-club","@TheRock_1 & @TVehicle","Facebook | https://www.facebook.com/PortElizabethChessClub ; Instagram | https://www.instagram.com/pechessclub?fbclid=IwY2xjawREhBNleHRuA2FlbQIxMABicmlkETFYOHp4OGM0TUt0T0l4djg4c3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHrGP5-7Zcn1BsEU_dI1n2-IWIKPBfKUnArWuYEpLaOlbxT5VEntJSk604qdv_aem_ohKF2IoTnC014Y1d38GkVA ; YouTube | https://www.youtube.com/channel/UCqJxqNR61P6z3nGezfYoOOQ"]
+,
+["CAN 🇨🇦 Toronto","Team Toronto","Team Toronto | https://www.chess.com/club/team-toronto","@mrsuitcase & @Penguincw",""]
+,
+["CAN 🇨🇦 Vancouver","VancouverChess","VancouverChess | https://www.chess.com/club/vancouverchess","@Ta2kas",""]
+,
+["USA 🇺🇸 Los Angeles","Los Angeles Chess Club - LACC","Los Angeles Chess Club - LACC | https://www.chess.com/club/los-angeles-chess-club-lacc","@californiagirlrocks & @maxwelldavidmurray11",""]
+,
+["USA 🇺🇸 Washington D.C.","Team Washington D.C.","Team Washington D.C. | https://www.chess.com/club/team-washington-d-c","@ghabil & @AlohaKauai","Website | http://www.ustcl.org/"]
+,
+["USA 🇺🇸 New York","Team New York","Team New York | https://www.chess.com/club/team-new-york","",""]
+,
+["MEX 🇲🇽 Ciudad de Mexico","Ciudad de Mexico","Ciudad de Mexico | https://www.chess.com/club/ciudad-de-mexico","@Aldebaran789 & @buazel","WhatsApp | https://chat.whatsapp.com/KUStTrSAqcE6QRD9aNBjRl"]
+,
+["COL 🇨🇴 Bogota","SchachBogota","SchachBogota | https://www.chess.com/clubs/about/schachbogota","@MarioPetrosian11 & @Behementh",""]
+,
+["PER 🇵🇪 Lima","Club Ajedrez Lima","Club Ajedrez Lima | https://www.chess.com/club/club-ajedrez-lima","@ProfeMarcoCAL",""]
+,
+["CHI 🇨🇱 Santiago de Chile","Santiago de Chile de Club de Ajedrez","Santiago de Chile de Club de Ajedrez | https://www.chess.com/club/santiago-de-chile-de-club-de-ajedrez","",""]
+,
+["ARG 🇦🇷 Buenos Aires","Team Buenos Aires","Team Buenos Aires | https://www.chess.com/club/team-buenos-aires","@Guinie & @delirantetotal",""]
+,
+["BRA 🇧🇷 Rio de Janeiro","Estado de Rio de Janeiro","Estado de Rio de Janeiro | https://www.chess.com/club/estado-de-rio-de-janeiro","",""]
+,
+["BRA 🇧🇷 São Luis","Enxadristas de Sao Luis - MA","Enxadristas de Sao Luis - MA | https://www.chess.com/club/enxadristas-de-sao-luis-ma","@magnorates",""]
+,
+["BRA 🇧🇷 Fortaleza","Fortaleza","Fortaleza | https://www.chess.com/club/fortaleza","@CzarPc & @jiffyc",""]
+,
+["NED 🇳🇱 The Hague","Team The Hague","Team The Hague | https://www.chess.com/club/team-the-hague","@RainPiper & @smirknow",""]
+,
+["UKR 🇺🇦 Kharkiv","Kharkiv Chess Team","Kharkiv Chess Team | https://www.chess.com/club/kharkiv-chess-team","@KatyKat11",""]
+,
+["GRE 🇬🇷 Messini","Messini Club","Messini Club | https://www.chess.com/club/messini-club","@manitarius & @chesswine27",""]
+,
+["GRE 🇬🇷 Athens","Team Athens","Team Athens | https://www.chess.com/club/team-athens","@Anastasakis & @chessnna",""]
+,
+["FRA 🇫🇷 Metz","Metz the Chess TT Team","Metz the Chess TT Team | https://www.chess.com/club/metz-the-chess-tt-team","@blastingchess & @menth",""]
+,
+["KAZ 🇰🇿 Almaty","Team Almaty","Team Almaty | https://www.chess.com/club/team-almaty","@krypton00 & @alchemist01",""]
+,
+["ITA 🇮🇹 Udine","Udine e FVG","Udine e FVG | https://www.chess.com/club/udine-e-fvg","@MauTrav & @andrewud",""]
+,
+["SVK 🇸🇰 Košice","Team Kosicky-Kraj","Team Kosicky-Kraj | https://www.chess.com/club/team-kosicky-kraj","@SlovakAustralia & @yosipko",""]
+,
+["UKR 🇺🇦 Kherson","Team Kherson","Team Kherson | https://www.chess.com/club/team-kherson","@believepony & @kostyazaharov",""]
+,
+["SRB 🇷🇸 Niš","Grad Niš - City of Niš","Grad Niš - City of Niš | https://www.chess.com/club/grad-nis-city-of-nis","@laki_69",""]
+,
+["BLR 🇧🇾 Minsk","Minsk","Minsk | https://www.chess.com/club/minsk","@hervasij_vylivaha & @sergtaw",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Sheffield","Sheffield","Sheffield | https://www.chess.com/club/sheffield","@KittyB & @superdrewe53",""]
+,
+["CAN 🇨🇦 Québec","Equipe Quebéc-Team","Equipe Quebéc-Team | https://www.chess.com/club/equipe-quebec-team","@mlongpre2 & @borisside",""]
+,
+["SCO 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Inverness","Inverness Chess Club","Inverness Chess Club | https://www.chess.com/club/inverness-chess-club","@martinhind3 & @arendijus",""]
+,
+["FRA 🇫🇷 Toulouse","Team Toulouse - Equipa Tolosa","Team Toulouse - Equipa Tolosa | https://www.chess.com/club/team-toulouse-equipa-tolosa","@deep-blou & @captainmorue",""]
+,
+["AUS 🇦🇺 Perth","Team Australia- Perth W.A","Team Australia- Perth W.A | https://www.chess.com/club/team-australia-perth-w-a","@vetuspetram & @dugite295",""]
+,
+["UKR 🇺🇦 Berdychiv","Berdychiv Chess Team","Berdychiv Chess Team | https://www.chess.com/club/berdychiv-chess-team","@Sergiy_Bondarchuk & @Defenderalist",""]
+,
+["SGP 🇸🇬 Singapore","Team Singapore","Team Singapore | https://www.chess.com/club/team-singapore","@chessisfun4all88 & @boonthamchess",""]
+,
+["FRA 🇫🇷 Lyon","Lyon Echecs","Lyon Echecs | https://www.chess.com/club/lyon-echecs","@felinferoce & @ludovic69",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Norwich","Norfolk Knights","Norfolk Knights | https://www.chess.com/club/norfolk-knights","@matt1979 & @mrsdribble",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Chelmsford","Team Essex - Chelmsford","Team Essex - Chelmsford | https://www.chess.com/club/team-essex-chelmsford","@sandbrain & @captainstarkiller",""]
+,
+["UKR 🇺🇦  Khmelnitskiy","Team Khmelnitskiy","Team Khmelnitskiy | https://www.chess.com/club/team-khmelnitskiy","@serhiivolokh & @ruslan_immunity",""]
+,
+["ITA 🇮🇹 Calabria","Team Calabria","Team Calabria | https://www.chess.com/club/team-calabria","@lupodellasila & @FrancescoCicero92",""]
+,
+["AUS 🇦🇺 Brisbane","Team Australia - Brisbane QLD","Team Australia - Brisbane QLD | https://www.chess.com/club/team-australia-brisbane-qld","@igroki789 & @NorthAussie421",""]
+,
+["UKR 🇺🇦 Donetsk","Team Donetsk","Team Donetsk | https://www.chess.com/club/team-donetsk","@serhiivolokh & @V1738",""]
+,
+["USA 🇺🇸 Philadelphia","Team Philadelphia","Team Philadelphia | https://www.chess.com/club/team-philadelphia","@jcohen42 & @WafflesASAP",""]
+,
+["ARG 🇦🇷 Cordoba","Provincia de Cordoba","Provincia de Cordoba | https://www.chess.com/club/provincia-de-cordoba","@pulpopaz & @wallyup",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Hertford","Hertfordshire County Chess","Hertfordshire County Chess | https://www.chess.com/club/hertfordshire-county-chess","@chambro1970 & @borimglovechild",""]
+,
+["ITA 🇮🇹 Reggio Emilia","Ippogrifo Reggio-Emilia","Ippogrifo Reggio-Emilia | https://www.chess.com/club/ippogrifo-reggio-emilia","@pacio8 & @purplechess46","Website | https://www.ippogrifoscacchi.it/ ; Facebook | https://www.facebook.com/ippogrifoscacchi/"]
+,
+["ESP 🇪🇦 Maracena","Club de Ajedrez - Ciudad de Maracena","Club de Ajedrez - Ciudad de Maracena | https://www.chess.com/club/club-de-ajedrez-ciudad-de-maracena","@XeKinJok & @Pertinhez76",""]
+,
+["DEU 🇩🇪 Rostock","Team Rostock","Team Rostock | https://www.chess.com/club/team-rostock","@jabba-ranks & @bravehart111",""]
+,
+["FRA 🇫🇷 Bretagne","Bretagne Echecs","Bretagne Echecs | https://www.chess.com/club/bretagne-echecs","@Kookaburrra & @bluewarriorbird",""]
+,
+["SCO 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Perth","Tayside Fife and Stirlingshire","Tayside Fife and Stirlingshire | https://www.chess.com/club/tayside-fife-and-stirlingshire","@MunroBagger & @CCUKI",""]
+,
+["ESP 🇪🇦 Castilla y Leon","Team Castilla y Leon","Team Castilla y Leon | https://www.chess.com/club/team-castilla-y-leon","@postari & @maxi1968",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Farsley","Farsley Chess Club","Farsley Chess Club | https://www.chess.com/club/farsley-chess-club","@anthonychess82 & @davet65",""]
+,
+["HWI 🇺🇸🏝️ Honolulu","Team Honolulu","Team Honolulu | https://www.chess.com/club/team-honolulu","@uptophigh & @alohakauai",""]
+,
+["FRA 🇫🇷 Boulonge","Cercle Boulonnais des Echecs","Cercle Boulonnais des Echecs | https://www.chess.com/club/cercle-boulonnais-des-echecs","@rclboris & @bryanflr",""]
+,
+["ITA 🇮🇹 Bologna","Citta di Bologna","Citta di Bologna | https://www.chess.com/club/citta-di-bologna","@JFSebastianKnight &  @DirkFlasche",""]
+,
+["USA 🇺🇸 Kansas","Team Kansas City","Team Kansas City | https://www.chess.com/club/team-kansas-city","@VivaLaOdin & @blktgr",""]
+,
+["GRE 🇬🇷 Thessaloniki","Team Thessaloniki - Make∆onia","Team Thessaloniki - Make∆onia | https://www.chess.com/club/team-thessaloniki-makedonia","@anastasios & @Vasilis_64",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Nottingham","Team Nottinghamshire","Team Nottinghamshire | https://www.chess.com/club/team-nottinghamshire-1","@CCUKI & @cheeseman1998",""]
+,
+["IRL 🇮🇪 Connacht","Team Connacht","Team Connacht | https://www.chess.com/club/team-connacht","@rizlaprince & @CCUKI",""]
+,
+["UKR 🇺🇦 Cherkasy","Cherkasy - Cherkasi","Cherkasy - Cherkasi | https://www.chess.com/club/cherkasy-cherkasi","@yuriy_leonedov & @shumaaher",""]
+,
+["ITA 🇮🇹 Milano","Team Milano","Team Milano | https://www.chess.com/club/team-milano","@dag_stinner & @supermatt69",""]
+,
+["USA 🇺🇸 Atlanta","Atlanta","Atlanta | https://www.chess.com/club/atlanta","@badger2222222222222 & @aitm19",""]
+,
+["UKR 🇺🇦 Mykolayiv","Mykolaiv Chess Club","Mykolaiv Chess Club | https://www.chess.com/club/mykolaiv-chess-club","@Dimon131 & @kyrylo26",""]
+,
+["BRA 🇧🇷 Brasilia","Brasilia Distrito Federal Brazil","Brasilia Distrito Federal Brazil | https://www.chess.com/club/brasilia-distrito-federal-brazil","@Victor_SEP & @luizevandro",""]
+,
+["NIR/IRL 🇮🇪🏳️ Ulster","Province of Ulster","Province of Ulster | https://www.chess.com/club/province-of-ulster","@Kookaburrra & @Vivoj",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Leeds","Leeds","Leeds | https://www.chess.com/club/leeds","@pannalman & @Tricky_Dicky",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Oxford","Oxfordshire Chess Assoc.","Oxfordshire Chess Assoc. | https://www.chess.com/club/oxfordshire-chess-assoc","@BizzOX14 & @CCCUKI",""]
+,
+["KAZ 🇰🇿 Karagandy","Team Karagandy","Team Karagandy | https://www.chess.com/club/team-karagandy","@vmploach & @bruno_asfalto",""]
+,
+["AUS 🇦🇺 Hobart","Team Australia - Hobart Tasmania","Team Australia - Hobart Tasmania | https://www.chess.com/club/team-australia-hobart-tasmania","@etoile7 & @Kookaburrra",""]
+,
+["BRA 🇧🇷 Sao Jose RP","Xadrez Rio Preto","Xadrez Rio Preto | https://www.chess.com/club/xadrez-rio-preto","@ACM_ArthurKhachaturyan","WhatsApp | https://chat.whatsapp.com/JqCl0hCIOVGEFKB5LounFu?mode=gi_t"]
+,
+["ITA 🇮🇹 Venezia","Venezia","Venezia | https://www.chess.com/club/venezia","@Doktor_Oleg",""]
+,
+["AUS 🇦🇺 Canberra","Team Australia - Canberra ACT","Team Australia - Canberra ACT | https://www.chess.com/club/team-australia-canberra-act","@Kookaburrra & @Spiritof_Australia",""]
+,
+["AUS 🇦🇺 Darwin","Team Australia - Darwin NT","","@nods69 & @Kookaburrra",""]
+,
+["UKR 🇺🇦 Ternopil","Team Ternopil","Team Ternopil | https://www.chess.com/club/team-ternopil","@Zybex9 & @Ninifu",""]
+,
+["UKR 🇺🇦 Zaporozhye","Chess Team Zaporizhzhia","Chess Team Zaporizhzhia | https://www.chess.com/club/chess-team-zaporizhzhia","@serhiivolokh & @larsorub",""]
+,
+["ESP 🇪🇦 Lleida","Team Lleida","Team Lleida | https://www.chess.com/club/team-lleida","@xaviof",""]
+,
+["SCO 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Aberdeen","Aberdeenshire","Aberdeenshire | https://www.chess.com/club/aberdeenshire","@russtay73 & @Toddy1997",""]
+,
+["BRA 🇧🇷 Sao Paolo","Brasil --- Satildeo Paulo","Brasil --- Satildeo Paulo | https://www.chess.com/club/brasil---satildeo-paulo","@Schincariol & @Silver-grayknight",""]
+,
+["UKR 🇺🇦 Makeevka","Team Makeevka","Team Makeevka | https://www.chess.com/club/team-makeevka","@Zodchy-8686",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Bradford","Bradford","Bradford | https://www.chess.com/club/bradford","@chriswray","Website | http://www.bradfordchess.co.uk/"]
+,
+["ILM 🇮🇲 Isle of Man","The Isle of Man","The Isle of Man | https://www.chess.com/club/the-isle-of-man","@dfhunter & @Kookaburrra",""]
+,
+["BRA 🇧🇷 Porto Alegre","Porto Alegre","Porto Alegre | https://www.chess.com/club/porto-alegre","@dkrummenauer & @Wind",""]
+,
+["WAL 🏴󠁧󠁢󠁷󠁬󠁳󠁿 Cardiff","Glamorgan","Glamorgan | https://www.chess.com/club/glamorgan","@AndrewSmith & @Stephen_33",""]
+,
+["FRA 🇫🇷 Marsac-sur-l`Isle","Echiquier Club Marsacois","Echiquier Club Marsacois | https://www.chess.com/club/echiquier-club-marsacois","@Dangregor & @esmeralda82",""]
+,
+["UKR 🇺🇦 Ivano-Frankivsk","Team Ivano Frankivsk","","@dolynachess, @Lyub-Ko & @Nataliia06",""]
+,
+["SCO 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Shetland Islands","Highlands and Islands Team","Highlands and Islands Team | https://www.chess.com/club/highlands-and-islands-team","@Scarboy57, @SquashTheRoach & @rms9",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Kent","Kent Checkmates","Kent Checkmates | https://www.chess.com/club/kent-checkmates","@TheAuditer, @EvertinEejit & @HerbyQuiff",""]
+,
+["DEU 🇩🇪 Bremen","Bremer Schachartisten","Bremer Schachartisten | https://www.chess.com/club/bremer-schachartisten","@Tournamentix & @hohes_cs",""]
+,
+["DEU 🇩🇪 Brandenburg","Adlerauge Brandenburg","Adlerauge Brandenburg | https://www.chess.com/club/adlerauge-brandenburg","@Tournamentix & @hohes_cs",""]
+,
+["DEU 🇩🇪 Westfalen","Springer Westfalen Lippe","Springer Westfalen Lippe | https://www.chess.com/club/springer-westfalen-lippe","@Tournamentix & @hohes_cs",""]
+,
+["DEU 🇩🇪 Rheinland","Die Rheinlander","Die Rheinlander | https://www.chess.com/club/die-rheinlander","@Tournamentix & @hohes_cs",""]
+,
+["NGA 🇳🇬 Abuja","Team Abuja","Team Abuja | https://www.chess.com/club/team-abuja","@jmafeni & @Endless_Sleeky",""]
+,
+["IND 🇮🇳 Ahmedabad","Ahmedabad","Ahmedabad | https://www.chess.com/club/ahmedabad","@BillPhilip",""]
+,
+["FRA 🇫🇷 Aix-les-Bains","Aix les Bains Chess Academy","Aix les Bains Chess Academy | https://www.chess.com/club/aix-les-bains-chess-academy","@AixlesBains-Echecs (demoted!)","Website | http://www.aixlesbains-echecs.org/"]
+,
+["USA 🇺🇸 Albany","Team Albany","Team Albany | https://www.chess.com/club/team-albany","@panchess2000",""]
+,
+["ESP 🇪🇦 Alcoron","Team Alcorcon","Team Alcorcon | https://www.chess.com/club/team-alcorcon","@calypso_64 & @ajedrecista_es",""]
+,
+["NED 🇳🇱 Almere","Almere","Almere | https://www.chess.com/club/almere","@ronnie666 & @Mich52",""]
+,
+["ROU 🇷🇴 Bacau","Team Bacau Romania","Team Bacau Romania | https://www.chess.com/club/team-bacau-romania","@adyh40, @flono_b & @Balint1",""]
+,
+["ROU 🇷🇴 Brașov","CSM Viitorul Brasov","CSM Viitorul Brasov | https://www.chess.com/club/csm-viitorul-brasov","@AlexBV2002 & @FlorinCluj2",""]
+,
+["IRQ 🇮🇶 Basrah","Team Basrah","Team Basrah | https://www.chess.com/club/team-basrah","@Wamidh",""]
+,
+["RDM 🇩🇴 Bavaro","Bavaro Chess Club","Bavaro Chess Club | https://www.chess.com/club/baacutevaro-chess-club","@KingBavaro",""]
+,
+["IND 🇮🇳 Bengaluru","Team Bengaluru","Team Bengaluru | https://www.chess.com/club/team-bengaluru","@nick_p12 & @rvchess777",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Bristol","Team Bristol","Team Bristol | https://www.chess.com/club/team-bristol","@Charlest & @Bostick",""]
+,
+["BUL 🇧🇬 Burgas","Team Burgas","Team Burgas | https://www.chess.com/club/team-burgas","@rumbild & @nikokolev",""]
+,
+["USA 🇺🇸 Burnsville","Team Burnsville","Team Burnsville | https://www.chess.com/club/team-burnsville","@sethrey",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Burton-on-Trent","Burton Chess Club","Burton Chess Club | https://www.chess.com/club/burton-chess-club","@TheManWithNo_Name, @back2tnorf & @Staloqq","Website | https://lms.englishchess.org.uk/lms/organisation/610"]
+,
+["ITA 🇮🇹 Piemonte","Team Piemonte","Team Piemonte | https://www.chess.com/club/team-piemonte","@Aldo1984 & @DanieleAirola",""]
+,
+["ITA 🇮🇹 Lazio","Lazio","Lazio | https://www.chess.com/club/lazio","@Barocci, @Aldo1984 & @TexWillerNavajo",""]
+,
+["ITA 🇮🇹 Lombardia","Lombardia","Lombardia | https://www.chess.com/club/lombardia","@melaa01 & @spqr94",""]
+,
+["CAN 🇨🇦 Calgary","Calgary Team","Calgary Team | https://www.chess.com/club/calgary-team","@hlyrad, @nick4567 & @bbrout",""]
+,
+["IRL 🇮🇪  Cavan","Cavan Chess Club","Cavan Chess Club | https://www.chess.com/club/cavan-chess-club","@scolairebocht",""]
+,
+["PRC 🇨🇳 Changsha","Team Changsha","Team Changsha | https://www.chess.com/club/team-changsha","@ljs080627",""]
+,
+["USA 🇺🇸 Charleston","Charleston Chess Club","Charleston Chess Club | https://www.chess.com/club/charleston-chess-club","@Linwood82 & @DSheaf","Website | https://charlestonchess.org/ ; Facebook | https://www.facebook.com/groups/139891776370"]
+,
+["RUS 🇷🇺 Cheboksary","Team Chuvashia","Team Chuvashia | https://www.chess.com/club/team-chuvashia","@abataloff",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Coventry","City of Coventry Chess Society","City of Coventry Chess Society | https://www.chess.com/club/city-of-coventry-chess-society","@Coventry_Kid",""]
+,
+["BEL 🇧🇪 Dendermonde","t'ros Dendermonde","t'ros Dendermonde | https://www.chess.com/club/t-ros-dendermonde","@GunterGoossens & @janDENDERMONDE",""]
+,
+["USA 🇺🇸 Detroit","Detroit Rook City","Detroit Rook City | https://www.chess.com/club/detroit-rook-city","@Billium248 & @Jklenear",""]
+,
+["FRA 🇫🇷 Dieppe","l'echiquier Dieppois","l'echiquier Dieppois | https://www.chess.com/club/lechiquier-dieppois","@zaroks, @Musckin & @CFE-LFR-CFT",""]
+,
+["HRV 🇭🇷 Dubrovnik","Dubrovnik","Dubrovnik | https://www.chess.com/club/dubrovnik","@ZvonimirZ & @Brko56",""]
+,
+["HRV 🇭🇷 Dugo Selo","SK Dugo Selo","SK Dugo Selo | https://www.chess.com/club/scaronk-dugo-selo","@-marin-","Website | http://www.sk-dugoselo.weebly.com/"]
+,
+["SCO 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Dunbar","Dunbar Chess Club (Scotland)","Dunbar Chess Club (Scotland) | https://www.chess.com/club/dunbar-chess-club-scotland","@noahs_dad","Website | http://www.dunbarchessclub.co.uk/"]
+,
+["TJK 🇹🇯 Dushanbe","Team Dushanbe","Team Dushanbe | https://www.chess.com/club/team-dushanbe","@tajiktitan, @feranka & @Abubakr91","Telegram | https://t.me/+b2T20u4dEy05YTMy"]
+,
+["USA 🇺🇸 Elizabethtown","Elizabethtown Chess Club","Elizabethtown Chess Club | https://www.chess.com/club/elizabethtown-chess-club","@SirIvanhoe","Facebook | https://www.facebook.com/groups/2400978256805700"]
+,
+["IRQ 🇮🇶 Erbil","Iraqi Erbil Club","Iraqi Erbil Club | https://www.chess.com/club/iraqi-erbil-club","@AhmedMouhhamad",""]
+,
+["CRI 🇨🇷 Escazu","Escazú","Escazú | https://www.chess.com/club/escazuacute","@the_no_scope",""]
+,
+["ROU 🇷🇴 Galati","Galati Chess","Galati Chess | https://www.chess.com/club/galati-chess","@marin_adrian2001",""]
+,
+["PSE 🇵🇸 Gaza","Gaza","Gaza | https://www.chess.com/club/gaza","@spider99, @ihadjir & @mitto",""]
+,
+["BEL 🇧🇪 Gent","Cafeschakers-Gent","Cafeschakers-Gent | https://www.chess.com/club/cafeschakers-gent","@hotwax & @_Bungie_","Facebook | https://www.facebook.com/groups/cafeschakersgent/"]
+,
+["NED 🇳🇱 Groningen","Groningen","Groningen | https://www.chess.com/club/groningen","@pbpostma & @wpostma",""]
+,
+["USA 🇺🇸 Grove City","Grove City College Chess Team","Grove City College Chess Team | https://www.chess.com/club/grove-city-college-chess-team","@ChessinBlackandWhite",""]
+,
+["ISR 🇮🇱 Haifa","Haifa Chess Team","Haifa Chess Team | https://www.chess.com/club/haifa-chess-team","@Serjved",""]
+,
+["NOR 🇧🇻 Hamar","Hamar Sjakkselskap","Hamar Sjakkselskap | https://www.chess.com/club/hamar-sjakkselskap","@Brainiac20, @INbetweenMOVE & @kaladinstormlight",""]
+,
+["CAN 🇨🇦 Hamilton","Team Hamilton","Team Hamilton | https://www.chess.com/club/team-hamilton","@SavichBeast & @HIPPYTHRASH",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Hastings","Hastings and St. Leonards Chess Club","Hastings and St. Leonards Chess Club | https://www.chess.com/club/hastings-and-st-leonards-chess-club","@horsechessnut, @GhoulishFungus & @turingtester",""]
+,
+["NOR 🇧🇻 Haugesund","Team Haugesund","Team Haugesund | https://www.chess.com/club/team-haugesund","@bjornhe",""]
+,
+["HGK 🇭🇰 Hong Kong","Team Hong Kong","Team Hong Kong | https://www.chess.com/club/team-hong-kong","@kwokman, @sofatree & @LCWL",""]
+,
+["ROU 🇷🇴 Iasi","Team Iasi Romania","Team Iasi Romania | https://www.chess.com/club/team-iasi-romania","@alexcarcea, @Dumniezau & @crazy75",""]
+,
+["DEU 🇩🇪 Ingolstadt","Team Ingolstadt","Team Ingolstadt | https://www.chess.com/club/team-ingolstadt","@jmrackl",""]
+,
+["USA 🇺🇸 Jacksonville","Jacksonville Chess Club","Jacksonville Chess Club | https://www.chess.com/club/jacksonville-chess-club-fl-jaxcc-org","@kasro, @Lavendar3 & @Rook_Handler",""]
+,
+["ALB 🇦🇱 Korca","Korca City","Korca City | https://www.chess.com/club/korca-city","@nastja-thebest & @thomaq1964",""]
+,
+["MYS 🇲🇾 Kota Kinabalu","Team Kota Kinabalu","Team Kota Kinabalu | https://www.chess.com/club/team-kota-kinabalu","@Edgar_Asmad",""]
+,
+["MYS 🇲🇾 Kuala Lumpur","Kuala Lumpur","Kuala Lumpur | https://www.chess.com/club/kuala-lumpur","@Nhavined_Your_King",""]
+,
+["NOR 🇧🇻 Kristiansund","Kristiansund SK","Kristiansund SK | https://www.chess.com/club/kristiansund-sk","@Tore-Kristiansund & @iverwh",""]
+,
+["DZA 🇩🇿 Laghouat","Chess Club Laghouat CCL","Chess Club Laghouat CCL | https://www.chess.com/club/chess-club-laghouat-ccl","@mostafov",""]
+,
+["NGA 🇳🇬 Lagos","Team Lagos","Team Lagos | https://www.chess.com/club/team-lagos","@Adebola & @Beeschaup",""]
+,
+["PHI 🇵🇭 Maasin City","Maasin City Team Phils","Maasin City Team Phils | https://www.chess.com/club/maasin-city-team-phils","@rjboy",""]
+,
+["HWI 🇺🇸 🌴Mililani","Mililani Chess Club","Mililani Chess Club | https://www.chess.com/club/mililani-chess-club","@HawaiianDragon & @HawaiianGambit",""]
+,
+["USA 🇺🇸 Minneapolis","Minneapolis - Minnesota","Minneapolis - Minnesota | https://www.chess.com/club/minneapolis-minnesota","@TimmInMinn, @fanta141, @Zweb & @DLV",""]
+,
+["ITA 🇮🇹 Modena","Modena Chess","Modena Chess | https://www.chess.com/club/modena-chess","@DanTheChessMasterz",""]
+,
+["IRQ 🇮🇶 Mosul","Team Mosul","Team Mosul | https://www.chess.com/club/team-mosul","@Saieb-Khalil",""]
+,
+["IND 🇮🇳 Mumbai","Team Mumbai","Team Mumbai | https://www.chess.com/club/team-mumbai","@barrj777a, @KVNLU & @bondonfire",""]
+,
+["USA 🇺🇸 Nashville","Team Nashville","Team Nashville | https://www.chess.com/club/team-nashville","@riggs1",""]
+,
+["USA 🇺🇸 New Orleans","Team New Orleans","Team New Orleans | https://www.chess.com/club/team-new-orleans","@strickland420",""]
+,
+["AUS 🇦🇺 Newcastle","Newcastle PCYC Chess Club","Newcastle PCYC Chess Club | https://www.chess.com/club/newcastle-pcyc-chess-club","@besaunders & @Wrightsway",""]
+,
+["SVK 🇸🇰 Nitra","Nitra","Nitra | https://www.chess.com/club/nitra","@dupal68",""]
+,
+["HRV 🇭🇷 Novigrad","NOŠK Novigrad","NOŠK Novigrad | https://www.chess.com/club/noscaronk-novigrad","@Pakujac",""]
+,
+["UKR 🇺🇦 Odessa","Team Odessa","Team Odessa | https://www.chess.com/club/team-odessa","@Kapablanka013 & @rekosheten",""]
+,
+["USA 🇺🇸 Phoenix","Team Phoenix","Team Phoenix | https://www.chess.com/club/team-phoenix","@DaveShack",""]
+,
+["USA 🇺🇸 Pittsburgh","Team Pittsburgh","Team Pittsburgh | https://www.chess.com/club/team-pittsburgh","@smarty715",""]
+,
+["POL 🇵🇱  Poznan","Team Poznan - WLKP","Team Poznan - WLKP | https://www.chess.com/club/team-poznan-wlkp","@CIORGA",""]
+,
+["MEX 🇲🇽 Queretaro","Team Quereacutetaro","Team Quereacutetaro | https://www.chess.com/club/team-quereacutetaro","@jcortesr & @carlosmael",""]
+,
+["USA 🇺🇸 Salem","Team Salem","Team Salem | https://www.chess.com/club/team-salem","@ZipJedi",""]
+,
+["ITA 🇮🇹 Salerno","Team Salerno - Italia","Team Salerno - Italia | https://www.chess.com/club/team-salerno-italia","@MonkeyDDragon7, @AntonioMariaDAngelo & @Gufo4",""]
+,
+["UZB 🇺🇿 Samarqand","Team Samarqand","Team Samarqand | https://www.chess.com/club/team-samarqand","@nishonov & @atamurotov",""]
+,
+["USA 🇺🇸 San Antonio","San Antonio Chess Club","San Antonio Chess Club | https://www.chess.com/club/san-antonio-chess-club","@Mooglepino & @xLightBringerx","Website | https://sanantoniochessclub.com/"]
+,
+["USA 🇺🇸 San Diego","San Diego Group","San Diego Group | https://www.chess.com/club/san-diego-group","@ChessbrotherJon, @collinsdanielp & @mab23",""]
+,
+["USA 🇺🇸 Santa Barbara","Santa Barbara Chess Club","Santa Barbara Chess Club | https://www.chess.com/club/santa-barbara-chess-club","@giant_buz2 & @darkleaf",""]
+,
+["IND 🇮🇳 Secunderabad","Team Secunderabad","Team Secunderabad | https://www.chess.com/club/team-secunderabad","@bharath_lss",""]
+,
+["FRA 🇫🇷 Seichamps","Seichamps Echecs the Team","Seichamps Echecs the Team | https://www.chess.com/club/seichamps-echecs-the-team","@baris3",""]
+,
+["IRI 🇮🇷 Semnam","Team Semnan","Team Semnan | https://www.chess.com/club/team-semnan","@aban1352",""]
+,
+["IRI 🇮🇷 Shiraz","Team Shiraz","Team Shiraz | https://www.chess.com/club/team-shiraz","@kOOrOsh92",""]
+,
+["UKR 🇺🇦 Shotska","Shostka Compania","Shostka Compania | https://www.chess.com/club/shostka-compania","@KatyKat11",""]
+,
+["UKR 🇺🇦 Solvyansk","Team Slovyansk","Team Slovyansk | https://www.chess.com/club/team-slovyansk","@Ber39chess",""]
+,
+["WAL 🏴󠁧󠁢󠁷󠁬󠁳󠁿 Solihull","Solihull Chess Club","Solihull Chess Club | https://www.chess.com/club/solihull-chess-club","@KRO1975 & @RAASolihull",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Surrey","Team Surrey","Team Surrey | https://www.chess.com/club/team-surrey","@Pangus, @Tricky_Dicky & @Cool-Colin",""]
+,
+["USA 🇺🇸 Thousand Oaks","Thousand Oaks Chess Club","Thousand Oaks Chess Club | https://www.chess.com/club/thousand-oaks-chess-club","@Wizard_Chess97","Website | http://tochessclub.org/"]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Uckfield","Uckfield Chess Club","Uckfield Chess Club | https://www.chess.com/club/uckfield-chess-club","@Equaliser769 & @ladysue",""]
+,
+["SWE 🇸🇪 Umea","Rockaden Umearing","Rockaden Umearing | https://www.chess.com/club/rockaden-umearing","@TheLuigiBrother",""]
+,
+["NED 🇳🇱 Utrecht","Chess Team Utrecht","Chess Team Utrecht | https://www.chess.com/club/chess-team-utrecht","@kaos1204",""]
+,
+["ITA 🇮🇹 Veneto","Team Veneto","Team Veneto | https://www.chess.com/club/team-veneto","@Aldo1984 & @baldazar","Website | https://vesus.org/search/tournaments/"]
+,
+["ARG 🇦🇷 Villa de Parque","Club de Ajedrez de Villa del Parque","Club de Ajedrez de Villa del Parque | https://www.chess.com/club/club-de-ajedrez-de-villa-del-parque","@nyko1978, @fernamos & @Calimestro",""]
+,
+["HRV 🇭🇷 Zagorje","Sahovski Klub Zagorje","Sahovski Klub Zagorje | https://www.chess.com/club/sahovski-klub-quotzagorjequot-zagorje","@Krklecjosipbrzi, @velemajstorgb & @majstortom",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Worcester","Herefordshire Worcestershire Shropshire","Herefordshire Worcestershire Shropshire | https://www.chess.com/club/herefordshire-worcestershire-shropshire","@andrewsc21","@kenworthy"]
+,
+["IRL 🇮🇪 Cork","Munster","Munster | https://www.chess.com/club/munster","@kookaburrra","@ImperfectAge"]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Dorchester","English Celts","English Celts | https://www.chess.com/club/english-celts","@munrobagger",""]
+,
+["POR 🇵🇹 Porto","Celtas do Norte - Portugal Northern Celts","Celtas do Norte - Portugal Northern Celts | https://www.chess.com/club/northern-portugal-a-celtic-league-team","@munrobagger",""]
+,
+["FRA 🇫🇷 Rennes","Rennes","Rennes | https://www.chess.com/club/rennes","@kookaburrra","@Grognard37"]
+,
+["ESP 🇪🇦 Zaragoza","Team Aragón","Team Aragón | https://www.chess.com/club/team-aragon","@eltorzon","@Pomb113"]
+,
+["IRL 🇮🇪 Galway","Team Connacht","Team Connacht | https://www.chess.com/club/team-connacht","@kookaburrra","@RIZLAPRINCE"]
+,
+["SVK 🇸🇰 Trencin","Team Trenciansky kraj","Team Trenciansky kraj | https://www.chess.com/club/team-trenciansky-kraj","@vladimir2708 & @manincan",""]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Leicester","Leicestershire and Rutland","Leicestershire and Rutland | https://www.chess.com/club/leicestershire-and-rutland","@kookaburrra","@bigfluffything"]
+,
+["FRA 🇫🇷 Nantes","Team-Nantes","Team-Nantes | https://www.chess.com/club/team-nantes-1","@kookaburrra","@CFE-LFR-CFT"]
+,
+["SCO 🏴󠁧󠁢󠁳󠁣󠁴󠁿Peterhead","Highlanders Celtic League Chess Team","Highlanders Celtic League Chess Team | https://www.chess.com/club/highlanders-celtic-league-chess-team","@munrobagger & @steve1903",""]
+,
+["SCO 🏴󠁧󠁢󠁳󠁣󠁴󠁿 Ayr","Ayrshire BDG","Ayrshire BDG | https://www.chess.com/club/ayrshire-bdg","@kookaburrra","@necronuk"]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Gloucester","Team Gloucestershire","Team Gloucestershire | https://www.chess.com/club/team-gloucestershire","@kookaburrra","@BeeZzzNeeZzz"]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Warwick","Warwickshire County Chess","Warwickshire County Chess | https://www.chess.com/club/warwickshire-county-chess","@kookaburrra","@Matt_the_Shield"]
+,
+["ENG 🏴󠁧󠁢󠁥󠁮󠁧󠁿  Trowbridge","Team Wiltshire","Team Wiltshire | https://www.chess.com/club/team-wiltshire","@kookaburrra","@Crowded_House"]
+,
+["USA 🇺🇲 Maryland","Team Maryland","Team Maryland | https://www.chess.com/club/team-maryland","@Kookaburrra & @Tony_Hehl",""]
+,
+["ARG 🇦🇷 Neuquén","Patagonia","Patagonia | https://www.chess.com/club/patagonia","@munrobagger & @WFDTH",""]
+,
+["POL 🇵🇱 Łańcut","OREO Łańcut","OREO Łańcut | https://www.chess.com/club/oreo-lancut","@lufeni & @gotmes",""]
+,
+["USA 🇺🇲 Cheyenne","Cheyenne Wyoming Chess Club","Cheyenne Wyoming Chess Club | https://www.chess.com/club/cheyenne-wyoming-chess-club","@goodguycoke",""]
+,
+["USA 🇺🇲 Massachusetts","Massachusetts Matchplay","Massachusetts Matchplay | https://www.chess.com/club/massachusetts-matchplay","@Kookaburrra & @xenophon98",""]
+,
+["TÜR 🇹🇷 Trabzon","Team Trabzon","Team Trabzon | https://www.chess.com/club/team-trabzon-1","@uzayali & @HMrPenguin",""]
+,
+["TÜR 🇹🇷 Erzurum","Team Erzurum","Team Erzurum | https://www.chess.com/club/team-erzurum-1","@AnatolianLeader & @HMrPenguin",""]
+,
+["RUS 🇷🇺 Novosibirsk","Team Novosibirsk","Team Novosibirsk | https://www.chess.com/club/team-novosibirsk","@Talnivarr_the_Sleeper","Lichess | https://lichess.org/team/----team-siberian-federal-okrug"]
+];
+var ISO=[
+["South Africa","za","-30.56","22.94"]
+,["Algeria","dz","28.03","1.66"]
+,["Angola","ao","-11.20","17.87"]
+,["Botswana","bw","-22.33","24.68"]
+,["Burundi","bi","-3.37","29.92"]
+,["Burkina Faso","bf","12.24","-1.56"]
+,["Benin","bj","9.31","2.32"]
+,["Central African Republic","cf","6.61","20.94"]
+,["Mayotte","yt","-12.83","45.17"]
+,["Chad","td","15.45","18.73"]
+,["DR Congo","cd","-4.04","21.76"]
+,["Republic of Congo","cg","-0.23","15.83"]
+,["Côte d'Ivoire","ci","7.54","-5.55"]
+,["Cameroon","cm","7.37","12.35"]
+,["Cabo Verde","cv","16.54","-23.04"]
+,["Djibouti","dj","11.83","42.59"]
+,["Egypt","eg","26.82","30.80"]
+,["Eritrea","er","15.18","39.78"]
+,["Swaziland (Eswatini)","sz","-26.52","31.47"]
+,["Ethiopia","et","9.15","40.49"]
+,["Gabon","ga","-0.80","11.61"]
+,["Gambia","gm","13.44","-15.31"]
+,["Ghana","gh","7.95","-1.02"]
+,["Guinea","gn","9.95","-9.70"]
+,["Equatorial Guinea","gq","1.65","10.27"]
+,["Guinea-Bissau","gw","11.80","-15.18"]
+,["Madagascar","mg","-18.77","46.87"]
+,["Lesotho","ls","-29.61","28.23"]
+,["Liberia","lr","6.43","-9.43"]
+,["Libya","ly","26.34","17.23"]
+,["Morocco","ma","31.79","-7.09"]
+,["Kenya","ke","-0.02","37.91"]
+,["Comoros","km","-11.88","43.87"]
+,["Mali","ml","17.57","-4.00"]
+,["Mauritania","mr","21.01","-10.94"]
+,["Mauritius","mu","-20.35","57.55"]
+,["Malawi","mw","-13.25","34.30"]
+,["Mozambique","mz","-18.67","35.53"]
+,["Namibia","na","-22.96","18.49"]
+,["Niger","ne","17.61","8.08"]
+,["Nigeria","ng","9.08","8.68"]
+,["Réunion","re","-21.12","55.54"]
+,["Rwanda","rw","-1.94","29.87"]
+,["Seychelles","sc","-4.68","55.49"]
+,["Sudan","sd","12.86","30.22"]
+,["South Sudan","ss","6.88","31.31"]
+,["Sierra Leone","sl","8.46","-11.78"]
+,["Senegal","sn","14.50","-14.45"]
+,["Somalia","so","5.15","46.20"]
+,["São Tome & Principe","st","0.19","6.61"]
+,["Togo","tg","8.62","0.82"]
+,["Tunisia","tn","33.89","9.54"]
+,["Tanzania","tz","-6.37","34.89"]
+,["Uganda","ug","1.37","32.29"]
+,["Zambia","zm","-13.13","27.85"]
+,["Zimbabwe","zw","-19.02","29.15"]
+,["Canada","ca","56.13","-106.35"]
+,["USA","us","37.09","-95.71"]
+,["Mexico","mx","23.63","-102.55"]
+,["Anguilla","ai","18.22","-63.07"]
+,["Aruba","aw","12.52","-69.97"]
+,["Bahamas","bs","25.03","-77.40"]
+,["Barbados","bb","13.19","-59.54"]
+,["Belize","bz","17.19","-88.50"]
+,["Bermuda","bm","32.31","-64.76"]
+,["Cayman Islands","ky","19.31","-81.25"]
+,["Costa Rica","cr","9.75","-83.75"]
+,["Cuba","cu","21.52","-77.78"]
+,["Curaçao","cw","12.17","-68.99"]
+,["Dominica","dm","15.41","-61.37"]
+,["Grenada","gd","12.12","-61.68"]
+,["Guadeloupe","gp","16.27","-61.55"]
+,["Guatemala","gt","15.78","-90.23"]
+,["Guyana","gy","4.86","-58.93"]
+,["Honduras","hn","15.20","-86.24"]
+,["Jamaica","jm","18.11","-77.30"]
+,["Montserrat","ms","16.74","-62.19"]
+,["Puerto Rico","pr","18.22","-66.59"]
+,["Saint Lucia","lc","13.91","-60.98"]
+,["Saint Kitts & Nevis","kn","17.36","-62.78"]
+,["Suriname","sr","3.92","-56.03"]
+,["Trinidad & Tobago","tt","10.69","-61.22"]
+,["Sint Maarten","sx","18.04","-63.05"]
+,["Turks & Caicos","tc","21.69","-71.80"]
+,["US Virgin Islands","vi","18.34","-64.90"]
+,["British Virgin Islands","vg","18.42","-64.62"]
+,["St. Vincent & Grenadines","vc","12.98","-61.29"]
+,["Argentina","ar","-38.42","-63.62"]
+,["Bolivia","bo","-16.29","-63.59"]
+,["Brazil","br","-14.24","-51.93"]
+,["Chile","cl","-35.68","-71.54"]
+,["Colombia","co","4.57","-74.30"]
+,["Ecuador","ec","-1.83","-78.18"]
+,["El Salvador","sv","13.79","-88.90"]
+,["Greenland","gl","71.71","-42.60"]
+,["French Guyana","gf","3.93","-53.13"]
+,["Haiti","ht","18.97","-72.29"]
+,["Nicaragua","ni","12.87","-85.21"]
+,["Panama","pa","8.54","-80.78"]
+,["Paraguay","py","-23.44","-58.44"]
+,["Peru","pe","-9.19","-75.02"]
+,["Dominican Republic","do","18.74","-70.16"]
+,["Uruguay","uy","-32.52","-55.77"]
+,["Venezuela","ve","6.42","-66.59"]
+,["Falkland Islands","fk","-51.80","-59.52"]
+,["Afghanistan","af","33.94","67.71"]
+,["Saudi Arabia","sa","23.89","45.08"]
+,["Armenia","am","40.07","45.04"]
+,["Azerbaidjan","az","40.14","47.58"]
+,["Bahrain","bh","25.93","50.64"]
+,["Bangladesh","bd","23.68","90.36"]
+,["Bhutan","bt","27.51","90.43"]
+,["Brunei","bn","4.54","114.73"]
+,["Cambodia","kh","12.57","104.99"]
+,["PR China","cn","35.86","104.20"]
+,["North Korea (DPRK)","kp","40.34","127.51"]
+,["South Korea","kr","35.91","127.77"]
+,["United Arab Emirates","ae","23.42","53.85"]
+,["Fiji","fj","-17.71","178.07"]
+,["Philippines","ph","12.88","121.77"]
+,["Georgia","ge","42.32","43.36"]
+,["India","in","20.59","78.96"]
+,["Indonesia","id","-0.79","113.92"]
+,["Jordan","jo","30.59","36.24"]
+,["Iraq","iq","33.22","43.68"]
+,["IR Iran","ir","32.43","53.69"]
+,["Japan","jp","36.20","138.25"]
+,["Kazahstan","kz","48.02","66.92"]
+,["Kyrgyzstan","kg","41.20","74.77"]
+,["Laos","la","19.86","102.50"]
+,["Lebanon","lb","33.85","35.86"]
+,["Maldives","mv","3.20","73.22"]
+,["Malaysia","my","4.21","101.98"]
+,["Mongolia","mn","46.86","103.85"]
+,["Myanmar","mm","21.91","95.96"]
+,["Nepal","np","28.39","84.12"]
+,["New Zealand","nz","-40.90","174.89"]
+,["Australia","au","-25.27","133.78"]
+,["Oman","om","21.47","55.98"]
+,["Pakistan","pk","30.38","69.35"]
+,["Palestine","ps","31.95","35.23"]
+,["Papua New Guinea","pg","-6.31","143.96"]
+,["Qatar","qa","25.35","51.18"]
+,["Hong Kong","hk","22.40","114.11"]
+,["Singapore","sg","1.35","103.82"]
+,["Syria","sy","34.80","38.99"]
+,["Sri Lanka","lk","7.87","80.77"]
+,["Tajikistan","tj","38.86","71.28"]
+,["Taiwan (Chinese Taipei)","tw","23.70","120.96"]
+,["Thailand","th","15.87","100.99"]
+,["Tonga","to","-21.18","-175.20"]
+,["Turkmenistan","tm","38.97","59.56"]
+,["East Timor","tl","-8.87","125.73"]
+,["Tuvalu","tv","-7.11","177.65"]
+,["French Polynesia (Tahiti)","pf","-17.68","-149.41"]
+,["New Caledonia","nc","-20.90","165.62"]
+,["Uzbekistan","uz","41.38","64.59"]
+,["Vietnam","vn","14.06","108.28"]
+,["Yemen","ye","15.55","48.52"]
+,["Hawaii","us","19.90","-155.58"]
+,["American Samoa","as","-14.27","-170.13"]
+,["Kiribati","ki","1.87","-157.36"]
+,["Niue","nu","-19.05","-169.87"]
+,["Palau","pw","7.51","134.58"]
+,["Solomon Islands","sb","-9.64","160.16"]
+,["Micronesia","fm","7.43","150.55"]
+,["Vanuatu","vu","-15.38","166.96"]
+,["Samoa","ws","-13.76","-172.10"]
+,["Marshall Islands","mh","7.13","171.18"]
+,["Northern Mariana Islands","mp","15.10","145.67"]
+,["Guam","gu","13.44","144.79"]
+,["Norfolk Islands","nf","-29.04","167.95"]
+,["Naeoro","nr","-0.52","166.93"]
+,["Albania","al","41.15","20.17"]
+,["Andorra","ad","42.55","1.60"]
+,["Austria","at","47.52","14.55"]
+,["Belarus","by","53.71","27.95"]
+,["Belgium","be","50.50","4.47"]
+,["Bosnia and Herzegovina","ba","43.92","17.68"]
+,["Bulgaria","bg","42.73","25.49"]
+,["Cyprus","cy","35.13","33.43"]
+,["Czech Republic","cz","49.82","15.47"]
+,["Croatia","hr","45.10","15.20"]
+,["Denmark","dk","56.26","9.50"]
+,["Estonia","ee","58.60","25.01"]
+,["Switzerland","ch","46.82","8.23"]
+,["Faroe Islands","fo","61.89","-6.91"]
+,["Finland","fi","61.92","25.75"]
+,["France","fr","46.23","2.21"]
+,["Galicia","es","42.57","-8.13"]
+,["Germany","de","51.17","10.45"]
+,["Greece","gr","39.07","21.82"]
+,["Iceland","is","64.96","-19.02"]
+,["Ireland","ie","53.41","-8.24"]
+,["Israel","il","31.05","34.85"]
+,["Italy","it","41.87","12.57"]
+,["United Kingdom","gb","55.38","-3.44"]
+,["Latvia","lv","56.88","24.60"]
+,["Lithuania","lt","55.17","23.88"]
+,["Liechtenstein","li","47.17","9.56"]
+,["North Macedonia","mk","41.61","21.75"]
+,["Malta","mt","35.94","14.38"]
+,["Monaco","mc","43.73","7.42"]
+,["Montenegro","me","42.71","19.37"]
+,["Norway","no","60.47","8.47"]
+,["Poland","pl","51.92","19.15"]
+,["Portugal","pt","39.40","-8.22"]
+,["Moldova","md","47.41","28.37"]
+,["Romania","ro","45.94","24.97"]
+,["Russia","ru","61.52","105.32"]
+,["Serbia","rs","44.02","21.01"]
+,["Slovakia","sk","48.67","19.70"]
+,["Slovenia","si","46.15","14.99"]
+,["Spain","es","40.46","-3.75"]
+,["Vatican City","va","41.90","12.45"]
+,["Sweden","se","60.13","18.64"]
+,["Türkiye","tr","38.96","35.24"]
+,["Netherlands","nl","52.13","5.29"]
+,["Ukraine","ua","48.38","31.17"]
+,["Hungary","hu","47.16","19.50"]
+,["Gibraltar","gi","36.14","-5.35"]
+,["Isle of Man","im","54.24","-4.55"]
+,["Channel Islands","gg","49.37","-2.36"]
+];
+var W=1000,H=500;
+var FLAG_ISO={"South Africa":"za","Algeria":"dz","Angola":"ao","Botswana":"bw","Burundi":"bi","Burkina Faso":"bf","Benin":"bj","Central African Republic":"cf","Mayotte":"yt","Chad":"td","DR Congo":"cd","Republic of Congo":"cg","Côte d'Ivoire":"ci","Cameroon":"cm","Cabo Verde":"cv","Djibouti":"dj","Egypt":"eg","Eritrea":"er","Swaziland (Eswatini)":"sz","Ethiopia":"et","Gabon":"ga","Gambia":"gm","Ghana":"gh","Guinea":"gn","Equatorial Guinea":"gq","Guinea-Bissau":"gw","Madagascar":"mg","Lesotho":"ls","Liberia":"lr","Libya":"ly","Morocco":"ma","Kenya":"ke","Comoros":"km","Mali":"ml","Mauritania":"mr","Mauritius":"mu","Malawi":"mw","Mozambique":"mz","Namibia":"na","Niger":"ne","Nigeria":"ng","Réunion":"re","Rwanda":"rw","Seychelles":"sc","Sudan":"sd","South Sudan":"ss","Sierra Leone":"sl","Senegal":"sn","Somalia":"so","São Tome & Principe":"st","Togo":"tg","Tunisia":"tn","Tanzania":"tz","Uganda":"ug","Zambia":"zm","Zimbabwe":"zw","Canada":"ca","USA":"us","Mexico":"mx","Anguilla":"ai","Aruba":"aw","Bahamas":"bs","Barbados":"bb","Belize":"bz","Bermuda":"bm","Cayman Islands":"ky","Costa Rica":"cr","Cuba":"cu","Curaçao":"cw","Dominica":"dm","Grenada":"gd","Guadeloupe":"gp","Guatemala":"gt","Guyana":"gy","Honduras":"hn","Jamaica":"jm","Montserrat":"ms","Puerto Rico":"pr","Saint Lucia":"lc","Saint Kitts & Nevis":"kn","Suriname":"sr","Trinidad & Tobago":"tt","Sint Maarten":"sx","Turks & Caicos":"tc","US Virgin Islands":"vi","British Virgin Islands":"vg","St. Vincent & Grenadines":"vc","Argentina":"ar","Bolivia":"bo","Brazil":"br","Chile":"cl","Colombia":"co","Ecuador":"ec","El Salvador":"sv","Greenland":"gl","French Guyana":"gf","Haiti":"ht","Nicaragua":"ni","Panama":"pa","Paraguay":"py","Peru":"pe","Dominican Republic":"do","Uruguay":"uy","Venezuela":"ve","Falkland Islands":"fk","Afghanistan":"af","Saudi Arabia":"sa","Armenia":"am","Azerbaidjan":"az","Bahrain":"bh","Bangladesh":"bd","Bhutan":"bt","Brunei":"bn","Cambodia":"kh","PR China":"cn","North Korea (DPRK)":"kp","South Korea":"kr","United Arab Emirates":"ae","Fiji":"fj","Philippines":"ph","Georgia":"ge","India":"in","Indonesia":"id","Jordan":"jo","Iraq":"iq","IR Iran":"ir","Japan":"jp","Kazahstan":"kz","Kyrgyzstan":"kg","Laos":"la","Lebanon":"lb","Maldives":"mv","Malaysia":"my","Mongolia":"mn","Myanmar":"mm","Nepal":"np","New Zealand":"nz","Australia":"au","Oman":"om","Pakistan":"pk","Palestine":"ps","Papua New Guinea":"pg","Qatar":"qa","Hong Kong":"hk","Singapore":"sg","Syria":"sy","Sri Lanka":"lk","Tajikistan":"tj","Taiwan (Chinese Taipei)":"tw","Thailand":"th","Tonga":"to","Turkmenistan":"tm","East Timor":"tl","Tuvalu":"tv","French Polynesia (Tahiti)":"pf","New Caledonia":"nc","Uzbekistan":"uz","Vietnam":"vn","Yemen":"ye","Hawaii":"us","American Samoa":"as","Kiribati":"ki","Niue":"nu","Palau":"pw","Solomon Islands":"sb","Micronesia":"fm","Vanuatu":"vu","Samoa":"ws","Marshall Islands":"mh","Northern Mariana Islands":"mp","Guam":"gu","Norfolk Islands":"nf","Naeoro":"nr","Albania":"al","Andorra":"ad","Austria":"at","Belarus":"by","Belgium":"be","Bosnia and Herzegovina":"ba","Bulgaria":"bg","Cyprus":"cy","Czech Republic":"cz","Croatia":"hr","Denmark":"dk","Estonia":"ee","Switzerland":"ch","Faroe Islands":"fo","Finland":"fi","France":"fr","Galicia":"es","Germany":"de","Greece":"gr","Iceland":"is","Ireland":"ie","Israel":"il","Italy":"it","United Kingdom":"gb","Latvia":"lv","Lithuania":"lt","Liechtenstein":"li","North Macedonia":"mk","Malta":"mt","Monaco":"mc","Montenegro":"me","Norway":"no","Poland":"pl","Portugal":"pt","Moldova":"md","Romania":"ro","Russia":"ru","Serbia":"rs","Slovakia":"sk","Slovenia":"si","Spain":"es","Vatican City":"va","Sweden":"se","Türkiye":"tr","Netherlands":"nl","Ukraine":"ua","Hungary":"hu","Gibraltar":"gi","Isle of Man":"im","Channel Islands":"gg"};
+var ISO_BY={}; ISO.forEach(function(r){ ISO_BY[r[0]]=r; });
+function strip(s){ return String(s).replace(/[\u{1F1E6}-\u{1F1FF}]/gu,"").replace(/[\u{E0020}-\u{E007F}]/gu,"").replace(/[\u{FE0F}\u{20E3}\u{2B1C}\u{1F7E6}\u{1F3F4}\u{1F3F3}\u{1F3DD}]/gu,"").replace(/\s+/g," ").trim(); }
+function cityCountry(raw){ var m=raw.match(/^([A-Z]{3})\s/); return m?m[1]:""; }
+var CODE_TO_NAME={"ENG":"United Kingdom","SCO":"United Kingdom","WAL":"United Kingdom","NIR":"United Kingdom","IRL":"Ireland","ICE":"Iceland","HRV":"Croatia","PRC":"PR China","AUS":"Australia","DEU":"Germany","ESP":"Spain","ROU":"Romania","IND":"India","BRA":"Brazil","SVK":"Slovakia","RUS":"Russia","NED":"Netherlands","CAN":"Canada","SRB":"Serbia","POL":"Poland","NOR":"Norway","IRQ":"Iraq","IRI":"IR Iran","ARG":"Argentina","KAZ":"Kazahstan","GRE":"Greece","BUL":"Bulgaria","SWE":"Sweden","SKO":"South Korea","RSA":"South Africa","NGA":"Nigeria","MYS":"Malaysia","MEX":"Mexico","KSA":"Saudi Arabia","ISR":"Israel","IDN":"Indonesia","EGY":"Egypt","FRA":"France","ITA":"Italy","UKR":"Ukraine","USA":"USA","HWI":"USA"};
+var pins=[];
+NATIONS.forEach(function(r,i){
+  var name=strip(r[0]);
+  var iso=ISO_BY[name]||ISO_BY[name.split(" ")[0]];
+  pins.push({kind:"nation",id:"n"+i,name:name,label:strip(r[1]),team:r[1],admins:r[3],social:r[4],teamLink:r[2],country:name,status:""});
+});
+CITIES.forEach(function(r,i){
+  var code=cityCountry(r[0]);
+  var country=CODE_TO_NAME[code]||"";
+  var city=strip(r[0]).replace(/^[A-Z]{3}\s*/,"");
+  pins.push({kind:"city",id:"c"+i,name:city,label:strip(r[1]),team:r[1],admins:r[3],social:r[4],teamLink:r[2],country:country,status:r[5]});
+});
+var nationPins=pins.filter(function(p){return p.kind==="nation"});
+var cityPins=pins.filter(function(p){return p.kind==="city"});
+d3.select("#stats").text(NATIONS.length+" national team rows · "+CITIES.length+" city rows · "+pins.length+" total entries");
+var svg=d3.select("#map").append("svg").attr("viewBox","0 0 "+W+" "+H).attr("preserveAspectRatio","xMidYMid meet");
+var defs=svg.append("defs");
+var g=svg.append("g");
+var proj=d3.geoEquirectangular().scale(160).translate([W/2,H/2]).center([0,5]);
+var path=d3.geoPath(proj);
+var tip=d3.select("#tip");
+var layer="all", query="", selected=null;
+var nameToFeat={};
+fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json").then(function(r){return r.json()}).then(function(world){
+  var fc=topojson.feature(world,world.objects.countries);
+  g.append("path").attr("d",path({type:"Sphere"})).attr("fill","#a9c7e8");
+  fc.features.forEach(function(f,i){
+    var nm=f.properties.name;
+    var id="cp"+i;
+    var iso=null;
+    var key=Object.keys(FLAG_ISO).find(function(k){return k===nm || k.toLowerCase()===nm.toLowerCase()});
+    if(!key){ var alias={"United States of America":"USA","Czechia":"Czech Republic","Dem. Rep. Congo":"DR Congo","Republic of the Congo":"Republic of Congo","Côte d'Ivoire":"Côte d'Ivoire","Dominican Rep.":"Dominican Republic","Bosnia and Herz.":"Bosnia and Herzegovina","North Macedonia":"North Macedonia","Russia":"Russia","Iran":"IR Iran","South Korea":"South Korea","North Korea":"North Korea (DPRK)","Turkey":"Türkiye","Tanzania":"Tanzania","Eswatini":"Swaziland (Eswatini)","Eq. Guinea":"Equatorial Guinea","S. Sudan":"South Sudan","Central African Rep.":"Central African Republic","W. Sahara":"","Guinea-Bissau":"Guinea-Bissau","Lao PDR":"Laos","Vietnam":"Vietnam","Dem. Rep. Korea":"North Korea (DPRK)","China":"PR China","Kazakhstan":"Kazahstan","Azerbaijan":"Azerbaidjan","Timor-Leste":"East Timor","Myanmar":"Myanmar","Solomon Is.":"Solomon Islands","Palestine":"Palestine","Somaliland":"","Western Sahara":""}; key=alias[nm]; }
+    if(key){ iso=FLAG_ISO[key]; }
+    if(iso){
+      var bb=path.bounds(f), x0=bb[0][0], y0=bb[0][1], x1=bb[1][0], y1=bb[1][1];
+      var bw=Math.max(x1-x0,1), bh=Math.max(y1-y0,1);
+      var cid="clip"+i;
+      defs.append("clipPath").attr("id",cid).append("path").attr("d",path(f));
+      g.append("image").attr("href","https://flagcdn.com/w320/"+iso+".png").attr("x",x0).attr("y",y0).attr("width",bw).attr("height",bh).attr("preserveAspectRatio","none").attr("clip-path","url(#"+cid+")").attr("class","flagimg").attr("data-name",key);
+      g.append("path").attr("d",path(f)).attr("class","country hit").attr("fill","transparent").attr("data-name",key).on("click",function(){ pickCountry(key||nm); });
+    } else {
+      g.append("path").attr("d",path(f)).attr("class","country").attr("fill","#2b3340").attr("data-name",nm).on("click",function(){ pickCountry(nm); });
+    }
+  });
+  placePins();
+  list();
+});
+function centroidOf(name){ name=strip(name);
+  var r=ISO_BY[name]; if(!r) return null;
+  var lat=parseFloat(r[2]), lon=parseFloat(r[3]);
+  return proj([lon,lat]);
+}
+var cityOffsets={};
+function placePins(){
+  g.selectAll("circle.pin").remove();
+  var vis=pins.filter(visible);
+  var byCountry={};
+  vis.forEach(function(p){ var k=p.country||p.name; byCountry[k]=(byCountry[k]||0)+1; });
+  var seen={};
+  vis.forEach(function(p){
+    var base=centroidOf(p.country)||centroidOf(p.name);
+    if(!base) return;
+    var k=p.country||p.name; seen[k]=(seen[k]||0)+1;
+    var n=seen[k]-1, ang=n*2.399, rad=(n===0?0:4+n*1.5);
+    var x=base[0]+Math.cos(ang)*rad, y=base[1]+Math.sin(ang)*rad;
+    if(isNaN(x)||isNaN(y)) return;
+    g.append("circle").attr("class","pin "+p.kind+(selected===p?" sel":""))
+      .attr("cx",x).attr("cy",y).attr("r0",p.kind==="nation"?5:3.5).attr("r",p.kind==="nation"?5:3.5)
+      .on("click",function(e){ e.stopPropagation(); select(p); })
+      .on("mousemove",function(e){ tip.style("display","block").style("left",(e.clientX+12)+"px").style("top",(e.clientY+12)+"px").text(p.label+" ("+(p.kind==="nation"?"National team":"City")+")"); })
+      .on("mouseleave",function(){ tip.style("display","none"); });
+  });
+}
+function visible(p){
+  if(layer!=="all" && p.kind!==layer) return false;
+  if(!query) return true;
+  var q=query.toLowerCase();
+  return (p.name+" "+p.label+" "+p.admins+" "+p.country).toLowerCase().indexOf(q)>-1;
+}
+function list(){
+  var box=d3.select("#list").html("");
+  pins.filter(visible).forEach(function(p){
+    var r=box.append("div").attr("class","row"+(selected===p?" sel":"")).on("click",function(){ select(p); });
+    r.append("span").text(p.name+" · "+p.label);
+    r.append("span").attr("class","m").text(p.kind==="nation"?"National team":"City");
+  });
+}
+function norm(s){ return String(s).normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]/gi,"").toLowerCase(); }
+function pickCountry(name){
+  var nn=norm(name);
+  var alt={"macedonia":"northmacedonia","northmacedonia":"northmacedonia"};
+  nn=alt[nn]||nn;
+  var hit=pins.filter(function(p){ return p.kind==="nation" && (norm(p.country)===nn || norm(p.name)===nn); });
+  if(hit.length){ select(hit[0]); return; }
+  var list2=pins.filter(function(p){ return p.kind==="nation" && (p.country===name || p.name===name); });
+  if(list2.length) select(list2[0]);
+  else d3.select("#detail").html("<span class='muted'>No team listed for "+esc(name)+".</span>");
+}
+function linkify(text){
+  return esc(text).replace(/(https?:\/\/[^\s<]+)/g,function(u){return "<a href='"+u+"' target='_blank' rel='noopener'>"+u+"</a>";})
+    .replace(/(^|\s)(mailto:[^\s<]+)/g,function(m,a,u){return a+"<a href='"+u+"'>"+u.replace("mailto:","")+"</a>";});
+}
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function select(p){
+  selected=p; list(); placePins();
+  var teamHtml="";
+  (p.teamLink||"").split(" ; ").forEach(function(part){
+    var bits=part.split(" | ");
+    if(bits.length===2) teamHtml+="<div><a href='"+bits[1]+"' target='_blank' rel='noopener'>"+esc(bits[0])+"</a></div>";
+    else if(part.trim()) teamHtml+="<div>"+esc(part)+"</div>";
+  });
+  d3.select("#detail").html(
+    "<div><strong>"+esc(p.team)+"</strong></div>"+
+    "<div class='muted'>"+esc(p.kind==="nation"?"National team · "+p.name:"City · "+p.name+(p.country?" · "+p.country:""))+"</div>"+
+    "<div style='margin-top:8px'><span class='muted'>Team / club link:</span>"+(teamHtml||"<div>—</div>")+"</div>"+
+    "<div style='margin-top:8px'><span class='muted'>Admins / Coordinators:</span><div>"+linkify(p.admins||"—")+"</div></div>"+
+    "<div style='margin-top:8px'><span class='muted'>Social media & networks:</span><div>"+linkify(p.social||"—")+"</div></div>"+
+    (p.status?"<div style='margin-top:8px'><span class='muted'>Status:</span> "+esc(p.status)+"</div>":"")
+  );
+}
+d3.select("#layer").on("change",function(){ layer=this.value; list(); placePins(); });
+d3.select("#q").on("input",function(){ query=this.value; list(); placePins(); });
+// ---- zoom: applied to the group so countries and pins scale together
+var zoom=d3.zoom().scaleExtent([1,12]).on("zoom",function(ev){ g.attr("transform",ev.transform); g.selectAll("circle.pin").attr("r",function(){ return (+d3.select(this).attr("r0"))/ev.transform.k; }); });
+svg.call(zoom);
+d3.select("#zin").on("click",function(){ svg.transition().call(zoom.scaleBy,1.6); });
+d3.select("#zout").on("click",function(){ svg.transition().call(zoom.scaleBy,1/1.6); });
+d3.select("#zreset").on("click",function(){ svg.transition().call(zoom.transform,d3.zoomIdentity); });
+</script>
+</body></html>
